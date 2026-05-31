@@ -18,9 +18,13 @@ content:
   rate: "+8%"
 
 video:
-  # "landscape" => 1920x1080 (YouTube), "vertical" => 1080x1920 (Shorts/TikTok)
-  # The pipeline can render both in one run (see `render` below).
-  render: ["vertical", "landscape"]
+  # "vertical" => 1080x1920 (YouTube Shorts + TikTok), "landscape" => 1920x1080.
+  # Both YouTube and TikTok now publish the vertical render, so vertical-only is
+  # the default. Add "landscape" if you also want a 16:9 cut for anything else.
+  render: ["vertical"]
+  # YouTube Shorts must be <= this many seconds. The pipeline warns if a render
+  # would exceed it (trim words_per_item / num_items to fit).
+  shorts_max_seconds: 180
   fps: 30
   # Seconds to hold the title card and outro card
   title_card_seconds: 3.0

@@ -48,6 +48,22 @@ def run(cfg: dict, topic: str, script_path: str | None = None) -> dict:
     )
     outro_clip = tts.synthesize([script.outro], work, voice, rate, "outro")[0]
 
+    # 2b. Shorts duration guard. Cards add ~0.4s tails; this closely matches the
+    # final runtime. Warn if it would exceed the Shorts limit.
+    limit = cfg["video"].get("shorts_max_seconds", 180)
+    est = (
+        intro_clip.duration
+        + outro_clip.duration
+        + sum(c.duration + 0.4 for c in item_clips)
+        + 0.8
+    )
+    print(f"[pipeline] Estimated runtime ~{est:.0f}s (Shorts limit {limit}s).")
+    if "vertical" in cfg["video"]["render"] and est > limit:
+        print(
+            f"[pipeline] WARNING: ~{est:.0f}s exceeds the {limit}s YouTube Shorts "
+            f"limit. Lower content.num_items or content.words_per_item in config.yaml."
+        )
+
     # 3. Render each requested orientation
     rendered: dict[str, str] = {}
     for orientation in cfg["video"]["render"]:
@@ -85,14 +101,19 @@ def _maybe_upload(cfg: dict, script, rendered: dict[str, str]) -> None:
     if yt.get("enabled"):
         from . import upload_youtube
 
-        # YouTube long-form prefers landscape; fall back to whatever we have.
-        path = rendered.get("landscape") or next(iter(rendered.values()))
+        # We publish as YouTube Shorts: use the vertical render and add the
+        # #Shorts signal so YouTube classifies it as a Short. Shorts must be
+        # vertical/square and <= 3 minutes long.
+        path = rendered.get("vertical") or next(iter(rendered.values()))
+        title = script.title if "#shorts" in script.title.lower() else f"{script.title} #Shorts"
+        description = script.description.rstrip() + "\n\n#Shorts"
+        tags = list(dict.fromkeys(script.tags + ["shorts"]))
         try:
             upload_youtube.upload(
                 video_path=path,
-                title=script.title,
-                description=script.description,
-                tags=script.tags,
+                title=title,
+                description=description,
+                tags=tags,
                 privacy=yt.get("privacy", "private"),
                 category_id=yt.get("category_id", "27"),
             )

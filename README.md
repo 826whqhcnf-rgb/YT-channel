@@ -58,25 +58,43 @@ python main.py --topic "ancient inventions" --script script.json
 
 ---
 
-## Better AI scripts (optional)
+## AI script writer (recommended)
 
-The offline generator produces a coherent *template* so the pipeline runs
-with zero keys. For real, interesting facts, point it at an LLM in `.env`:
+Without a writer, the offline generator only makes *placeholder* text. To get
+real, interesting Top-10 facts, plug in an AI writer — it speaks the standard
+OpenAI-compatible API, so you just pick a provider and paste one key in `.env`.
 
-**Free + local (Ollama):**
-```env
-SCRIPT_API_BASE=http://localhost:11434/v1
-SCRIPT_API_KEY=ollama
-SCRIPT_MODEL=llama3.1
-```
-**OpenAI:**
-```env
-SCRIPT_API_BASE=https://api.openai.com/v1
-SCRIPT_API_KEY=sk-...
-SCRIPT_MODEL=gpt-4o-mini
-```
+**Free, no credit card — Groq (recommended):**
+1. Get a free key at https://console.groq.com/keys
+2. In `.env`:
+   ```env
+   SCRIPT_PROVIDER=groq
+   SCRIPT_API_KEY=gsk_your_key_here
+   ```
+3. Test it: `python main.py --topic "haunted places" --script-only` and open
+   `script.json` — you should see real facts, not placeholders.
+
+**Other providers** — just change `SCRIPT_PROVIDER` and `SCRIPT_API_KEY`:
+
+| `SCRIPT_PROVIDER` | Cost  | Get a key |
+|-------------------|-------|-----------|
+| `groq`            | free  | https://console.groq.com/keys |
+| `gemini`          | free  | https://aistudio.google.com/apikey |
+| `openrouter`      | free* | https://openrouter.ai/keys (use free models) |
+| `openai`          | paid  | https://platform.openai.com/api-keys |
+| `ollama`          | local | run https://ollama.com (no key needed) |
+
+Override the model with `SCRIPT_MODEL` if you like; sensible defaults are built in.
 
 > Always sanity-check AI-generated "facts" before publishing.
+
+### Topic ideas / batching
+`data/topics.txt` holds a bank of Top-10 ideas. Run with no topic (or
+`--random-topic`) to pick one at random — handy for cranking out a general
+"Top 10s" channel:
+```bash
+python main.py --random-topic
+```
 
 ---
 

@@ -56,16 +56,50 @@ class Script:
         )
 
 
-SYSTEM_PROMPT = """You are a scriptwriter for a faceless "Top 10" YouTube/TikTok channel.
-Write punchy, factual, engaging narration. No filler, no "in this video".
-Hook the viewer in the first sentence. Each item must be a self-contained,
-surprising fact. Return STRICT JSON only, no markdown fences."""
+SYSTEM_PROMPT = """You are the head writer for a fast-paced, faceless "Top 10"
+YouTube Shorts / TikTok channel. Your job: write a countdown that keeps viewers
+watching to #1.
+
+Rules:
+- Every item is ONE genuinely surprising, TRUE, verifiable fact. No fluff,
+  no "in this video", no "did you know", no repeating the item title.
+- First sentence is a strong hook that creates curiosity.
+- Narration is punchy and spoken-word (short sentences, active voice).
+- Build toward #1 being the most jaw-dropping item.
+- "keyword" must be a concrete, filmable visual phrase (2-3 words) that stock
+  footage would actually have (e.g. "anglerfish glowing", "lightning storm"),
+  NOT an abstract idea.
+- Do NOT invent fake statistics. If unsure, keep the claim general.
+Return STRICT JSON only — no markdown, no code fences, no commentary."""
+
+# provider -> (default base_url, default model). All are OpenAI-compatible.
+PROVIDERS = {
+    "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    "openai": ("https://api.openai.com/v1", "gpt-4o-mini"),
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.0-flash"),
+    "openrouter": ("https://openrouter.ai/api/v1", "meta-llama/llama-3.3-70b-instruct:free"),
+    "ollama": ("http://localhost:11434/v1", "llama3.1"),
+}
+
+
+def _resolve_provider() -> tuple[str, str, str]:
+    """Figure out base URL / key / model from SCRIPT_PROVIDER + overrides."""
+    provider = os.getenv("SCRIPT_PROVIDER", "").strip().lower()
+    base = os.getenv("SCRIPT_API_BASE", "").strip()
+    key = os.getenv("SCRIPT_API_KEY", "").strip()
+    model = os.getenv("SCRIPT_MODEL", "").strip()
+
+    if provider in PROVIDERS:
+        p_base, p_model = PROVIDERS[provider]
+        base = base or p_base
+        model = model or p_model
+        if provider == "ollama" and not key:
+            key = "ollama"  # Ollama ignores the key but the client requires one
+    return base, key, model or "gpt-4o-mini"
 
 
 def _llm_generate(topic: str, num_items: int, words_per_item: int) -> Script | None:
-    base = os.getenv("SCRIPT_API_BASE", "").strip()
-    key = os.getenv("SCRIPT_API_KEY", "").strip()
-    model = os.getenv("SCRIPT_MODEL", "gpt-4o-mini").strip()
+    base, key, model = _resolve_provider()
     if not base or not key:
         return None
 
@@ -92,9 +126,12 @@ def _llm_generate(topic: str, num_items: int, words_per_item: int) -> Script | N
         "tags": ["8-12 lowercase tags"],
     }
     user = (
-        f"Topic: {topic}\n"
-        f"Make exactly {num_items} items, ranked from {num_items} down to 1 "
-        f"(most interesting is #1).\n"
+        f'Write a "Top {num_items}" countdown video script about: {topic}\n'
+        f"- Title should read like 'Top {num_items} {topic.strip().rstrip('?.!').title()}'.\n"
+        f"- Exactly {num_items} items, ranked from {num_items} down to 1 "
+        f"(save the most jaw-dropping for #1).\n"
+        f"- Each narration is about {words_per_item} words so the whole video "
+        f"stays under 3 minutes for YouTube Shorts.\n"
         f"Return JSON matching this shape:\n{json.dumps(schema)}"
     )
     try:

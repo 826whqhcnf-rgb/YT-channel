@@ -61,6 +61,30 @@ key in it. (You only do this once per Codespace.)
 
 ---
 
+## Part B½ — Connect the AI writer (free, ~3 min)
+
+Without this, the narration is fake placeholder text. This step gives you real
+Top-10 facts. We'll use **Groq** because it's free and needs no credit card.
+
+1. Go to **https://console.groq.com/keys** and sign in (Google login is fine).
+2. Click **Create API Key**, give it any name, and **copy** the key (it starts
+   with `gsk_`).
+3. In the Codespace terminal, add it to your settings file by running these two
+   lines (paste your key between the quotes on the second line):
+
+   ```bash
+   echo 'SCRIPT_PROVIDER=groq' >> .env
+   echo 'SCRIPT_API_KEY=gsk_PASTE_YOUR_KEY_HERE' >> .env
+   ```
+
+   (Note the `>>` — that **adds** to the `.env` file without erasing your Pexels
+   key from Part B.)
+
+✅ **Checkpoint:** Your `.env` now has a Pexels key *and* a Groq key. Your videos
+will now have real facts written by AI.
+
+---
+
 ## Part C — Make your first video (~2–3 min)
 
 In the terminal, type this and press Enter (change the topic to whatever you
@@ -92,9 +116,9 @@ your device.
 2. You'll see a file ending in **`-vertical.mp4`**. Click it once to preview it,
    or **right-click it → Download** to save it to your Chromebook/iPad.
 
-> 📝 **Important about the words:** Out of the box, the narration is a *rough
-> placeholder* — it says things like "this is placeholder narration." That's
-> because it didn't use an AI writer yet. You have two easy options:
+> 📝 **About the words:** If you did **Part B½**, the AI writer fills in real
+> facts automatically — you're all set. If you skipped it, the narration is
+> placeholder text and you have two options:
 > - **Easiest:** open the `script.json` file in that output folder, and type
 >   your own real facts over the placeholder text (just change the words inside
 >   the quotes). Then re-make the video pointing at your edited script:

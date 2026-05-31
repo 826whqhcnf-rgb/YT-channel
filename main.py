@@ -30,15 +30,35 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def _random_topic(path: str = "data/topics.txt") -> str:
+    import random
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            ideas = [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
+        if ideas:
+            return random.choice(ideas)
+    except FileNotFoundError:
+        pass
+    return "strangest deep sea creatures"
+
+
 def main() -> int:
     load_dotenv()
     p = argparse.ArgumentParser(description="Faceless Top-10 video generator")
-    p.add_argument("--topic", required=True, help="Video topic, e.g. 'haunted places'")
+    p.add_argument("--topic", help="Video topic, e.g. 'haunted places'. "
+                                   "If omitted, a random idea from data/topics.txt is used.")
+    p.add_argument("--random-topic", action="store_true",
+                   help="Pick a random topic from data/topics.txt")
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--script", help="Path to an existing script.json to render")
     p.add_argument("--script-only", action="store_true", help="Only generate script.json")
     p.add_argument("--upload", help="Comma list: youtube,tiktok (overrides config)")
     args = p.parse_args()
+
+    if not args.topic or args.random_topic:
+        args.topic = _random_topic()
+        print(f"[main] Using topic: {args.topic}")
 
     cfg = load_config(args.config)
 

@@ -52,7 +52,18 @@ def main():
     p.add_argument("--script-only", action="store_true", help="Only write the script, no video")
     p.add_argument("--script", help="Path to existing script.json to use instead of generating")
     p.add_argument("--upload", help="youtube, tiktok, or youtube,tiktok")
+    p.add_argument("--reset-stories", action="store_true",
+                   help="Clear the list of already-used Reddit posts")
     args = p.parse_args()
+
+    if args.reset_stories:
+        used = os.path.join("data", "used_reddit.txt")
+        if os.path.exists(used):
+            os.remove(used)
+            print("Cleared used-stories list — Reddit posts can be reused now.")
+        else:
+            print("No used-stories list to clear.")
+        return
 
     cfg = load_config()
 

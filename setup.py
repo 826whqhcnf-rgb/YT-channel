@@ -140,6 +140,8 @@ def main():
     cfg.setdefault("source", "reddit")     # "reddit" = copy real posts, "ai" = AI-written
     cfg.setdefault("num_items", 12)        # number of story caption segments (AI source)
     cfg.setdefault("words_per_item", 25)   # words per caption segment
+    cfg.setdefault("min_words", 120)       # shortest Reddit story to accept
+    cfg.setdefault("max_words", 320)       # longer stories are truncated to this
     cfg.setdefault("music", "assets/music")  # folder of music tracks (random pick)
     cfg.setdefault("music_volume", 0.12)     # quiet bed under the narration
     cfg.setdefault("fps", 30)

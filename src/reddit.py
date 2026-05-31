@@ -74,49 +74,90 @@ def _clean(text: str) -> str:
 
 
 def _top_posts(subreddit: str, time_filter: str, limit: int) -> list[dict]:
+    last_err = ""
     for host in ("https://www.reddit.com", "https://old.reddit.com"):
         try:
             url = f"{host}/r/{subreddit}/top.json?t={time_filter}&limit={limit}"
             r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=20)
             r.raise_for_status()
             return [c["data"] for c in r.json()["data"]["children"]]
-        except Exception:
+        except Exception as e:  # noqa: BLE001
+            last_err = f"{type(e).__name__}: {e}"
             continue
+    if last_err:
+        print(f"[reddit]   r/{subreddit} fetch error ({last_err})")
     return []
+
+
+def _truncate_words(text: str, max_words: int) -> str:
+    """Trim to <= max_words, ending on a sentence boundary where possible."""
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    clipped = " ".join(words[:max_words])
+    # back up to the last sentence end so it doesn't cut mid-thought
+    m = list(re.finditer(r"[.!?]", clipped))
+    if m and m[-1].end() > len(clipped) * 0.5:
+        return clipped[: m[-1].end()]
+    return clipped + "..."
 
 
 def fetch_story(
     subreddits: list[str] | None = None,
-    min_words: int = 150,
-    max_words: int = 420,
+    min_words: int = 120,
+    max_words: int = 320,
     time_filter: str = "month",
-    limit: int = 60,
+    limit: int = 80,
 ) -> dict | None:
-    """Return a usable story post dict, or None if nothing suitable was found."""
+    """Return a usable story post dict, or None if nothing suitable was found.
+
+    Long stories are truncated to max_words (not rejected). Tries several time
+    windows so a channel that has used up recent posts still finds material.
+    """
     subs = list(subreddits or DEFAULT_SUBREDDITS)
     random.shuffle(subs)
     used = _load_used()
 
-    for sub in subs:
-        posts = _top_posts(sub, time_filter, limit)
-        random.shuffle(posts)
-        for p in posts:
-            if p.get("id") in used:
-                continue
-            if p.get("over_18") or p.get("stickied") or p.get("is_video"):
-                continue
-            body = _clean(p.get("selftext", ""))
-            wc = len(body.split())
-            if wc < min_words or wc > max_words:
-                continue
-            _mark_used(p["id"])
-            return {
-                "id": p["id"],
-                "title": _clean(p.get("title", "")),
-                "body": body,
-                "subreddit": sub,
-                "url": "https://reddit.com" + p.get("permalink", ""),
-            }
+    time_windows = [time_filter] + [t for t in ("year", "all", "week") if t != time_filter]
+    seen_any = False
+    too_short = too_long_ok = used_count = 0
+
+    for tf in time_windows:
+        for sub in subs:
+            posts = _top_posts(sub, tf, limit)
+            if posts:
+                seen_any = True
+            random.shuffle(posts)
+            for p in posts:
+                if p.get("id") in used:
+                    used_count += 1
+                    continue
+                if p.get("over_18") or p.get("stickied") or p.get("is_video"):
+                    continue
+                body = _clean(p.get("selftext", ""))
+                wc = len(body.split())
+                if wc < min_words:
+                    too_short += 1
+                    continue
+                if wc > max_words:
+                    body = _truncate_words(body, max_words)
+                    too_long_ok += 1
+                _mark_used(p["id"])
+                return {
+                    "id": p["id"],
+                    "title": _clean(p.get("title", "")),
+                    "body": body,
+                    "subreddit": sub,
+                    "url": "https://reddit.com" + p.get("permalink", ""),
+                }
+        # nothing in this window; widen to the next one
+
+    if not seen_any:
+        print("[reddit] Could not reach Reddit (network blocked or rate-limited).")
+    else:
+        print(f"[reddit] No new story matched filters "
+              f"(skipped: {used_count} already-used, {too_short} too short). "
+              f"Try lowering 'min_words' in config.json, or clear data/used_reddit.txt.")
     return None
 
 

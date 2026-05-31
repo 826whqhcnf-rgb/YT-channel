@@ -1,43 +1,25 @@
-# Top-10 topic ideas (one per line). Lines starting with # are ignored.
-# Used when you run `python main.py` with no --topic (picks one at random),
-# or `python main.py --random-topic`. Add your own ideas freely.
 strangest deep sea creatures
-unsolved mysteries of history
+unsolved mysteries of ancient history
 most dangerous animals on earth
 abandoned places frozen in time
-richest people in history
-weirdest laws around the world
-biggest man-made structures
-most venomous creatures alive
-strangest natural phenomena
-coldest places humans live
-fastest animals on the planet
-mysterious lost cities
-deadliest volcanoes in history
-strangest things found in space
-most expensive things ever sold
-rarest gemstones on earth
-biggest predators in the ocean
-creepiest abandoned theme parks
-most isolated places on earth
-strangest foods people eat
-ancient inventions ahead of their time
-most haunted locations on earth
-largest animals that ever lived
-strangest weather events ever recorded
-most remote islands in the world
-deadliest plants in the world
-biggest unsolved heists
-strangest jobs that actually exist
-most powerful militaries in history
-weirdest deep ocean discoveries
-fastest things ever built by humans
-strangest things sold on the black market
 most dangerous roads in the world
-animals with bizarre superpowers
-biggest archaeological discoveries
-strangest coincidences in history
-most extreme places on earth
-creatures that can survive anything
-mysterious signals from space
-most luxurious hotels in the world
+animals with unbelievable superpowers
+biggest heists ever pulled off
+deadliest natural disasters in history
+strangest things found in space
+most isolated places on earth
+fastest animals alive
+most venomous creatures on earth
+rarest gemstones ever discovered
+creepiest abandoned theme parks
+ancient inventions that were ahead of their time
+biggest predators in the ocean
+most expensive things ever sold at auction
+strangest weather events ever recorded
+things that can survive a nuclear blast
+most extreme places humans actually live
+most dangerous volcanoes on earth
+creepiest unsolved disappearances
+deadliest plants in the world
+strangest things discovered by archaeologists
+most bizarre world records ever set

@@ -1,21 +1,9 @@
-# Core video pipeline
-edge-tts>=6.1.9          # Free Microsoft neural TTS (no API key needed)
-Pillow>=9.5.0            # Text overlay rendering
-numpy>=1.24.0            # Gradient + overlay arrays
-requests>=2.31.0         # Pexels downloads
-PyYAML>=6.0              # config.yaml
-python-dotenv>=1.0.0     # .env secrets
-
-# Video is assembled by calling ffmpeg directly (no moviepy). The system
-# ffmpeg (installed via apt in .devcontainer) is used when present; this
-# package provides a bundled ffmpeg binary as a fallback so it still works
-# on a machine without one.
+edge-tts>=6.1.9
+Pillow>=9.5.0
+numpy>=1.24.0
+requests>=2.31.0
 imageio-ffmpeg>=0.4.9
-
-# Optional: script generation via an OpenAI-compatible endpoint (OpenAI, Ollama, etc.)
 openai>=1.30.0
-
-# YouTube upload (Data API v3)
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.2.0
 google-auth-httplib2>=0.2.0

@@ -44,7 +44,9 @@ def _random_topic(path: str = "data/topics.txt") -> str:
 
 
 def main() -> int:
-    load_dotenv()
+    # override=True so values in .env always win over any stale variable that
+    # might already be set in the shell / Codespaces secrets.
+    load_dotenv(override=True)
     p = argparse.ArgumentParser(description="Faceless Top-10 video generator")
     p.add_argument("--topic", help="Video topic, e.g. 'haunted places'. "
                                    "If omitted, a random idea from data/topics.txt is used.")

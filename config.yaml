@@ -10,8 +10,10 @@ channel:
 content:
   # Number of list items per video (a "Top 10" => 10)
   num_items: 10
-  # Words of narration target per item (controls pacing/length)
-  words_per_item: 35
+  # Words of narration target per item (controls pacing/length). Keep this
+  # punchy: 10 items must fit YouTube Shorts' 3-minute limit, and shorter
+  # segments also encode much faster on small machines.
+  words_per_item: 20
   # Voice for edge-tts. Browse all with:  edge-tts --list-voices
   voice: "en-US-AndrewNeural"
   # Speaking rate, e.g. "+0%", "+10%", "-5%"

@@ -168,6 +168,7 @@ def _render_segment(
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264", "-preset", "veryfast",
+        "-threads", "2",  # bound CPU/memory on small (2-core) machines
         "-c:a", "aac", "-ar", "44100", "-b:a", "128k",
         out_path,
     ]
@@ -222,7 +223,10 @@ def build_video(
     def seg_file(name: str) -> str:
         return os.path.join(parts_dir, name)
 
+    total = len(script.items) + 2
+
     # 1. Title card
+    print(f"[assembler] [1/{total}] title card")
     title_ov = _save_png(_card_overlay(size, script.title), seg_file("title_ov.png"))
     title_dur = (intro_clip.duration if intro_clip else title_seconds) + 0.4
     title_out = seg_file("seg_title.mp4")
@@ -233,6 +237,7 @@ def build_video(
 
     # 2. Item segments
     for idx, (item, vc) in enumerate(zip(script.items, voice_clips)):
+        print(f"[assembler] [{idx + 2}/{total}] item #{item.rank}: {item.title}")
         bg_path, bg_kind = visuals_mod.fetch(
             item.keyword or script.topic, visual_source, cache_dir, orientation, pexels_key
         )
@@ -248,6 +253,7 @@ def build_video(
         seg_paths.append(out_seg)
 
     # 3. Outro card
+    print(f"[assembler] [{total}/{total}] outro card")
     outro_text = script.outro or "Subscribe!"
     outro_ov = _save_png(_card_overlay(size, outro_text), seg_file("outro_ov.png"))
     outro_dur = (outro_clip.duration if outro_clip else outro_seconds) + 0.4
@@ -257,21 +263,30 @@ def build_video(
     )
     seg_paths.append(outro_out)
 
-    # 4. Concatenate (re-encode for safe, uniform timestamps)
+    # 4. Concatenate. All segments share identical codec params, so try a
+    # cheap stream-copy first (no re-encode = far less CPU/memory). Fall back
+    # to a re-encode only if copy produces bad timestamps.
+    print(f"[assembler] concatenating {len(seg_paths)} segments")
     list_file = seg_file("concat.txt")
     with open(list_file, "w", encoding="utf-8") as f:
         for p in seg_paths:
             f.write(f"file '{os.path.abspath(p)}'\n")
 
     concat_out = seg_file("concat.mp4")
-    ffmpeg_tools.run(
-        [
-            "-f", "concat", "-safe", "0", "-i", list_file,
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-ar", "44100",
-            concat_out,
-        ]
-    )
+    try:
+        ffmpeg_tools.run(
+            ["-f", "concat", "-safe", "0", "-i", list_file, "-c", "copy", concat_out]
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[assembler] stream-copy concat failed ({e}); re-encoding.")
+        ffmpeg_tools.run(
+            [
+                "-f", "concat", "-safe", "0", "-i", list_file,
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-threads", "2", "-c:a", "aac", "-ar", "44100",
+                concat_out,
+            ]
+        )
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 

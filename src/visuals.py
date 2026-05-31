@@ -37,8 +37,9 @@ def _download(url: str, dest: str) -> str:
 
 
 def _pick_video_file(files: list[dict], orientation: str) -> dict | None:
+    """Pick a ~1080p file. Avoid 4K sources — decoding them is the biggest
+    memory hog and can get the process killed on small machines."""
     want_portrait = orientation == "vertical"
-    # Prefer files matching orientation and a sane resolution (<=1080 wide-ish)
     candidates = []
     for f in files:
         w, h = f.get("width") or 0, f.get("height") or 0
@@ -47,13 +48,22 @@ def _pick_video_file(files: list[dict], orientation: str) -> dict | None:
         is_portrait = h >= w
         if is_portrait == want_portrait:
             candidates.append(f)
-    pool = candidates or files
+    pool = candidates or [f for f in files if f.get("width") and f.get("height")]
     if not pool:
         return None
-    # Pick the highest-res file that's not absurdly large
-    pool.sort(key=lambda f: (f.get("width") or 0) * (f.get("height") or 0))
-    mid = pool[len(pool) // 2]
-    return mid
+
+    # "short side" is what must cover the frame (width for vertical, height else).
+    def short_side(f: dict) -> int:
+        return min(f["width"], f["height"]) if want_portrait else f["height"]
+
+    target = 1080
+    # Prefer files whose short side is in [1080, 1440]; else the closest one.
+    ideal = [f for f in pool if target <= short_side(f) <= 1440]
+    if ideal:
+        ideal.sort(key=lambda f: short_side(f))
+        return ideal[0]
+    pool.sort(key=lambda f: abs(short_side(f) - target))
+    return pool[0]
 
 
 def fetch_video(keyword: str, cache_dir: str, orientation: str, api_key: str) -> str | None:

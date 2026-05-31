@@ -3,7 +3,50 @@ AI script writer — uses OpenRouter (free models, no credit card).
 Falls back to a short offline template if no key is set.
 """
 import json, os, re
+import requests
 from dataclasses import dataclass, field, asdict
+
+
+# Preferred free models, in priority order. We only use the ones OpenRouter
+# currently lists as free (fetched live), so a retired model never breaks us.
+PREFERRED_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "meta-llama/llama-3.1-70b-instruct:free",
+    "mistralai/mistral-small-3.2-24b-instruct:free",
+    "google/gemma-2-9b-it:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+]
+
+
+def fetch_free_models(key: str | None = None) -> list[str]:
+    """Ask OpenRouter which models are free *right now* (pricing == 0)."""
+    try:
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        r = requests.get("https://openrouter.ai/api/v1/models", headers=headers, timeout=15)
+        r.raise_for_status()
+        free = []
+        for m in r.json().get("data", []):
+            pr = m.get("pricing", {})
+            if str(pr.get("prompt", "x")) in ("0", "0.0") and str(pr.get("completion", "x")) in ("0", "0.0"):
+                free.append(m["id"])
+        return free
+    except Exception:
+        return []
+
+
+def choose_models(key: str | None = None) -> list[str]:
+    """Return an ordered list of usable free models (live list ∩ preferences)."""
+    free = set(fetch_free_models(key))
+    if not free:
+        return PREFERRED_MODELS  # offline/unknown: try the static list anyway
+    ordered = [m for m in PREFERRED_MODELS if m in free]
+    extras = [m for m in free if m not in PREFERRED_MODELS
+              and (":free" in m and any(t in m for t in ("instruct", "chat", "it")))]
+    result = ordered + extras
+    return (result or list(free))[:6]
+
 
 
 @dataclass
@@ -95,11 +138,7 @@ def _llm_generate(topic, n, wpw, title_hint, key) -> Script | None:
         print("[script] openai not installed.")
         return None
 
-    models = [
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "google/gemma-3-27b-it:free",
-    ]
+    models = choose_models(key)
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
     user_msg = USER_TEMPLATE.format(n=n, topic=topic, title_hint=title_hint, wpw=wpw)
 
@@ -143,13 +182,18 @@ def _llm_generate(topic, n, wpw, title_hint, key) -> Script | None:
             )
         except Exception as e:
             err = str(e)
-            if "rate" in err.lower() or "quota" in err.lower() or "limit" in err.lower():
-                print(f"rate limited; trying next model.")
+            low = err.lower()
+            if "401" in err or "no auth" in low or "invalid api key" in low or "user not found" in low:
+                print("\n[script] Your OpenRouter key is invalid. Run: python setup.py")
+                return None
+            if any(t in low for t in ("rate", "quota", "limit", "429", "404", "not found", "no endpoints")):
+                print("busy/unavailable; trying next model.")
                 continue
-            print(f"error: {e}")
-            return None
+            print(f"error: {e}; trying next model.")
+            continue
 
-    print("[script] All models failed; using offline template.")
+    print("[script] All free models were busy. Try again in a minute "
+          "(using offline template for now).")
     return None
 
 

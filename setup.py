@@ -19,14 +19,16 @@ def check_openrouter(key):
     except ImportError:
         return "bad", "openai package not installed (run: pip install -r requirements.txt)"
 
+    try:
+        from src.script import choose_models
+        models = choose_models(key)
+    except Exception:
+        models = ["meta-llama/llama-3.3-70b-instruct:free"]
+
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
-    models = [
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "google/gemma-3-27b-it:free",
-    ]
     last = ""
-    for model in models:
+    auth_passed = False
+    for model in models[:4]:
         try:
             r = client.chat.completions.create(
                 model=model,
@@ -37,13 +39,13 @@ def check_openrouter(key):
         except Exception as e:
             last = str(e)
             low = last.lower()
-            # A bad/invalid key fails auth regardless of which model — stop early.
+            # Only a genuine auth error means the key is bad.
             if "401" in last or "no auth" in low or "invalid api key" in low or "user not found" in low:
                 return "bad", last
-            # 429 / rate limit / temporarily busy: key is fine, model just busy.
+            # 404 / 429 / busy all mean the key authenticated fine.
+            auth_passed = True
             continue
-    low = last.lower()
-    if "429" in last or "rate" in low or "temporarily" in low or "busy" in low:
+    if auth_passed:
         return "valid_busy", last
     return "bad", last
 

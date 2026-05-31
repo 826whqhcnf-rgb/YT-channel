@@ -1,0 +1,47 @@
+# ============================================================================
+# Faceless YouTube/TikTok channel — pipeline configuration
+# ============================================================================
+
+channel:
+  name: "Top 10 Daily"
+  # Default tags appended to every upload
+  tags: ["top10", "facts", "didyouknow", "shorts", "education"]
+
+content:
+  # Number of list items per video (a "Top 10" => 10)
+  num_items: 10
+  # Words of narration target per item (controls pacing/length)
+  words_per_item: 35
+  # Voice for edge-tts. Browse all with:  edge-tts --list-voices
+  voice: "en-US-AndrewNeural"
+  # Speaking rate, e.g. "+0%", "+10%", "-5%"
+  rate: "+8%"
+
+video:
+  # "landscape" => 1920x1080 (YouTube), "vertical" => 1080x1920 (Shorts/TikTok)
+  # The pipeline can render both in one run (see `render` below).
+  render: ["vertical", "landscape"]
+  fps: 30
+  # Seconds to hold the title card and outro card
+  title_card_seconds: 3.0
+  outro_seconds: 3.0
+  # Background music file (put your own royalty-free track here). Optional.
+  music: "assets/music/bg.mp3"
+  music_volume: 0.12
+  # Burned-in captions (subtitles) on the video
+  captions: true
+
+visuals:
+  # "video" pulls stock clips from Pexels, "photo" pulls stills (Ken Burns zoom)
+  source: "video"
+  # Fallback gradient colors if Pexels returns nothing / no key set
+  fallback_colors: ["#0f2027", "#203a43", "#2c5364"]
+
+upload:
+  youtube:
+    enabled: false          # set true (and configure creds) to auto-upload
+    privacy: "private"      # private | unlisted | public
+    category_id: "27"       # 27 = Education
+  tiktok:
+    enabled: false
+    privacy: "SELF_ONLY"    # SELF_ONLY | MUTUAL_FOLLOW_FRIENDS | PUBLIC_TO_EVERYONE

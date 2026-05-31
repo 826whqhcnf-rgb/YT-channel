@@ -1,0 +1,22 @@
+# Secrets & credentials
+.env
+client_secret*.json
+token.json
+*.pickle
+
+# Generated output
+output/
+assets/cache/
+*.mp3
+*.wav
+*.mp4
+*.srt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.DS_Store

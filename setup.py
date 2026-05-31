@@ -137,8 +137,9 @@ def main():
     print(f"  Using: {cfg['voice']}")
 
     # --- Defaults ---
-    cfg.setdefault("num_items", 12)        # number of story caption segments
-    cfg.setdefault("words_per_item", 25)   # words per segment (~120s story)
+    cfg.setdefault("source", "reddit")     # "reddit" = copy real posts, "ai" = AI-written
+    cfg.setdefault("num_items", 12)        # number of story caption segments (AI source)
+    cfg.setdefault("words_per_item", 25)   # words per caption segment
     cfg.setdefault("music", "assets/music")  # folder of music tracks (random pick)
     cfg.setdefault("music_volume", 0.12)     # quiet bed under the narration
     cfg.setdefault("fps", 30)

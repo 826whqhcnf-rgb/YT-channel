@@ -23,20 +23,27 @@ The wizard **tests both keys** before saving them, so you'll know immediately if
 ## Make a video
 
 ```bash
-# Specific story prompt
-python run.py --topic "AITA for exposing my sister's secret at her wedding"
+# Make a video from a real trending Reddit story (default)
+python run.py
 
-# Random story prompt from data/topics.txt
-python run.py --random
-
-# Make a BACKLOG of 5 videos at once (random prompts)
+# Make a BACKLOG of 5 videos from 5 different Reddit stories
 python run.py --batch 5
 
 # Check the script before rendering
-python run.py --topic "AITA ..." --script-only
+python run.py --script-only
 ```
 
 Videos save to the `output/` folder. Download them and post to TikTok/YouTube Shorts.
+
+### Where the stories come from
+By default the tool pulls **real top posts** from story subreddits
+(r/AmItheAsshole, r/tifu, r/ProRevenge, r/MaliciousCompliance, and more) — no AI
+key needed. It remembers which posts it used so a batch never repeats.
+
+- Change the subreddits or word limits in `config.json`:
+  `"subreddits": ["AmItheAsshole","tifu",...]`, `"min_words"`, `"max_words"`.
+- Prefer AI-written original stories instead? Set `"source": "ai"` in
+  `config.json` (needs your OpenRouter key).
 
 ---
 

@@ -126,6 +126,45 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+def from_reddit(post: dict, words_per_item: int = 25) -> Script:
+    """Turn a fetched Reddit post into a narratable Script (no AI needed)."""
+    from . import reddit as reddit_mod
+
+    title = post.get("title", "").strip()
+    body = post.get("body", "").strip()
+    sub = post.get("subreddit", "")
+    kws = reddit_mod.mood_keywords(sub)
+
+    # Split body into sentences, then group into ~words_per_item-word captions.
+    sentences = re.split(r"(?<=[.!?])\s+", body)
+    segments: list[Segment] = []
+    cur: list[str] = []
+    count = 0
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        cur.append(s)
+        count += len(s.split())
+        if count >= words_per_item:
+            segments.append(Segment(text=" ".join(cur), keyword=kws[len(segments) % len(kws)]))
+            cur, count = [], 0
+    if cur:
+        segments.append(Segment(text=" ".join(cur), keyword=kws[len(segments) % len(kws)]))
+
+    short_title = title if len(title) <= 70 else title[:67] + "..."
+    tags = ["reddit", "story", "storytime", "redditstories", sub.lower(), "fyp", "viral"]
+    return Script(
+        topic=title,
+        title=short_title,
+        hook=title,
+        segments=segments,
+        outro="Was the OP wrong? Comment below — and follow for more stories.",
+        description=f"{title} #reddit #story #storytime #fyp",
+        tags=tags,
+    )
+
+
 def generate(topic: str, cfg: dict) -> Script:
     key = cfg.get("openrouter_key", "")
     # num_items / words_per_item now mean: number of caption segments and words each.

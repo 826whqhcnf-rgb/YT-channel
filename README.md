@@ -13,6 +13,8 @@ topic  →  AI script  →  neural voiceover  →  stock visuals  →  MP4(s)  �
 - **Free to start:** voiceover via `edge-tts` (no key), visuals via Pexels (free key).
 - **Renders both** vertical (1080×1920 for Shorts/TikTok) and landscape (1920×1080).
 - **Captions burned in**, big rank/title overlays, optional background music.
+- **Robust**: assembled with `ffmpeg` directly (no moviepy); a failed voice
+  segment or stock clip falls back gracefully instead of crashing the run.
 - **Optional AI scripts** via any OpenAI-compatible endpoint (OpenAI or local Ollama).
 - **Optional auto-upload** to YouTube (Data API v3) and TikTok (Content Posting API).
 
@@ -147,9 +149,10 @@ config.yaml             All tunable settings
 .env.example            Secrets template (copy to .env)
 src/
   script_generator.py   LLM or offline Top-10 script
-  tts.py                edge-tts voiceover
+  tts.py                edge-tts voiceover (retries + silent fallback)
   visuals.py            Pexels stock fetch + fallbacks
-  assembler.py          moviepy + PIL video assembly (no ImageMagick)
+  ffmpeg_tools.py       ffmpeg/ffprobe wrapper (system or bundled binary)
+  assembler.py          ffmpeg + PIL video assembly
   upload_youtube.py     YouTube Data API v3
   upload_tiktok.py      TikTok Content Posting API
   pipeline.py           Orchestrates the whole run

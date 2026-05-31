@@ -1,36 +1,29 @@
 """
-Assemble the final video with moviepy.
+Assemble the final video with ffmpeg (no moviepy — avoids its install/numpy
+breakage and uses far less memory).
 
-Text is rendered with PIL (Pillow) instead of moviepy's TextClip so there is
-NO ImageMagick dependency — it works out of the box on a clean machine.
+Text overlays are drawn with PIL into transparent PNGs, then composited over
+the background by ffmpeg. Each segment is rendered to its own MP4 and the
+segments are concatenated; a bad stock clip falls back to a gradient rather
+than killing the whole render.
 
 Per item:
-  background visual (stock video looped/cropped, or photo with Ken Burns)
-  + big rank/title overlay
-  + optional burned-in caption (the narration text)
-  + the narration audio (sets the segment duration)
-
-Then: title card + items + outro card, with optional background music.
+  background (stock video looped/cropped, or photo, or gradient)
+  + dark scrim for legibility
+  + big rank/title (top) and optional caption (bottom)
+  + the narration audio (sets the segment length)
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import textwrap
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from moviepy.editor import (
-    AudioFileClip,
-    ColorClip,
-    CompositeAudioClip,
-    CompositeVideoClip,
-    ImageClip,
-    VideoFileClip,
-    concatenate_videoclips,
-)
-from moviepy.audio.fx.audio_loop import audio_loop
+from . import ffmpeg_tools
 
 RESOLUTIONS = {
     "vertical": (1080, 1920),
@@ -39,7 +32,7 @@ RESOLUTIONS = {
 
 
 # --------------------------------------------------------------------------- #
-# Fonts
+# Fonts & helpers
 # --------------------------------------------------------------------------- #
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
     candidates = [
@@ -59,22 +52,23 @@ def _hex_to_rgb(h: str) -> tuple[int, int, int]:
     return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
 
 
+def _save_png(arr: np.ndarray, path: str) -> str:
+    Image.fromarray(arr, "RGBA").save(path)
+    return path
+
+
 # --------------------------------------------------------------------------- #
-# Text rendering (PIL -> RGBA image -> ImageClip)
+# Text rendering -> RGBA arrays
 # --------------------------------------------------------------------------- #
-def _text_image(
+def _draw_lines(
+    draw: ImageDraw.ImageDraw,
     lines: list[tuple[str, int]],
     size: tuple[int, int],
-    align: str = "center",
-    y_anchor: str = "center",
-    pad: int = 60,
+    y_anchor: str,
+    pad: int,
     stroke: int = 6,
-) -> np.ndarray:
-    """Render multi-size lines onto a transparent RGBA canvas."""
+) -> None:
     W, H = size
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
     rendered = []
     total_h = 0
     for text, fsize in lines:
@@ -92,12 +86,7 @@ def _text_image(
         y = pad
 
     for text, font, w, h in rendered:
-        if align == "center":
-            x = (W - w) // 2
-        elif align == "left":
-            x = pad
-        else:
-            x = W - w - pad
+        x = (W - w) // 2
         draw.text(
             (x, y),
             text,
@@ -108,110 +97,96 @@ def _text_image(
         )
         y += h + 14
 
+
+def _segment_overlay(size: tuple[int, int], rank: int, title: str, caption: str | None) -> np.ndarray:
+    """Scrim + top rank/title + optional bottom caption, on a transparent canvas."""
+    W, H = size
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 90))  # ~35% dark scrim
+    draw = ImageDraw.Draw(img)
+
+    top_lines = [(f"#{rank}", max(120, W // 7)), (title, max(54, W // 16))]
+    _draw_lines(draw, top_lines, size, y_anchor="top", pad=int(H * 0.08))
+
+    if caption:
+        wrap_chars = 26 if W < H else 48
+        wrapped = textwrap.fill(caption, wrap_chars).split("\n")[:3]
+        cap_lines = [(ln, max(40, W // 22)) for ln in wrapped]
+        _draw_lines(draw, cap_lines, size, y_anchor="bottom", pad=int(H * 0.10))
+
     return np.array(img)
 
 
-# --------------------------------------------------------------------------- #
-# Backgrounds
-# --------------------------------------------------------------------------- #
-def _fit_cover(clip, size: tuple[int, int]):
-    """Resize + center-crop a clip/image to exactly cover `size`."""
+def _card_overlay(size: tuple[int, int], title: str) -> np.ndarray:
     W, H = size
-    cw, ch = clip.size
-    scale = max(W / cw, H / ch)
-    clip = clip.resize(scale)
-    cw, ch = clip.size
-    x1 = (cw - W) // 2
-    y1 = (ch - H) // 2
-    return clip.crop(x1=x1, y1=y1, x2=x1 + W, y2=y1 + H)
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    wrapped = textwrap.fill(title, 16 if W < H else 28).split("\n")
+    lines = [(ln, max(70, W // 12)) for ln in wrapped]
+    _draw_lines(draw, lines, size, y_anchor="center", pad=0)
+    return np.array(img)
 
 
-def _gradient_bg(size: tuple[int, int], colors: list[str], duration: float):
+def _gradient_png(size: tuple[int, int], colors: list[str], path: str) -> str:
     W, H = size
     top = np.array(_hex_to_rgb(colors[0]))
     bot = np.array(_hex_to_rgb(colors[-1]))
-    grad = np.zeros((H, W, 3), dtype=np.uint8)
+    grad = np.zeros((H, W, 4), dtype=np.uint8)
+    grad[:, :, 3] = 255
     for y in range(H):
         t = y / max(H - 1, 1)
-        grad[y, :, :] = (top * (1 - t) + bot * t).astype(np.uint8)
-    return ImageClip(grad).set_duration(duration)
-
-
-def _background_for(
-    path: str | None, kind: str, size: tuple[int, int], duration: float, colors: list[str]
-):
-    if kind == "video" and path:
-        try:
-            base = VideoFileClip(path).without_audio()
-            base = _fit_cover(base, size)
-            # Loop or trim to match the needed duration
-            if base.duration < duration:
-                n = int(duration / base.duration) + 1
-                base = concatenate_videoclips([base] * n)
-            return base.subclip(0, duration)
-        except Exception as e:  # noqa: BLE001
-            print(f"[assembler] video bg failed ({e}); using gradient.")
-    elif kind == "photo" and path:
-        try:
-            img = ImageClip(path).set_duration(duration)
-            img = _fit_cover(img, size)
-            # Ken Burns: slow zoom from 1.0 -> 1.08
-            img = img.resize(lambda t: 1.0 + 0.08 * (t / max(duration, 0.1)))
-            img = _fit_cover(img, size)
-            return img.set_duration(duration)
-        except Exception as e:  # noqa: BLE001
-            print(f"[assembler] photo bg failed ({e}); using gradient.")
-    return _gradient_bg(size, colors, duration)
-
-
-def _scrim(size: tuple[int, int], duration: float, opacity: float = 0.35):
-    """Dark overlay so white text stays readable over any footage."""
-    return (
-        ColorClip(size, color=(0, 0, 0))
-        .set_opacity(opacity)
-        .set_duration(duration)
-    )
+        grad[y, :, :3] = (top * (1 - t) + bot * t).astype(np.uint8)
+    return _save_png(grad, path)
 
 
 # --------------------------------------------------------------------------- #
-# Cards & segments
+# Segment rendering
 # --------------------------------------------------------------------------- #
-def _caption_clip(text: str, size: tuple[int, int], duration: float):
+def _render_segment(
+    bg_path: str,
+    bg_is_video: bool,
+    overlay_png: str,
+    audio_path: str,
+    dur: float,
+    size: tuple[int, int],
+    fps: int,
+    out_path: str,
+) -> None:
     W, H = size
-    wrap_chars = 26 if W < H else 48
-    wrapped = textwrap.fill(text, wrap_chars)
-    lines = [(ln, max(40, W // 22)) for ln in wrapped.split("\n")][:3]
-    arr = _text_image(lines, (W, H), y_anchor="bottom", pad=int(H * 0.10))
-    return ImageClip(arr).set_duration(duration)
+    loop_bg = ["-stream_loop", "-1"] if bg_is_video else ["-loop", "1"]
+    args = [
+        *loop_bg, "-i", bg_path,
+        "-loop", "1", "-i", overlay_png,
+        "-i", audio_path,
+        "-filter_complex",
+        (
+            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},setsar=1,fps={fps}[bg];"
+            f"[bg][1:v]overlay=0:0[v]"
+        ),
+        "-map", "[v]", "-map", "2:a",
+        "-t", f"{dur:.2f}",
+        "-r", str(fps),
+        "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "veryfast",
+        "-c:a", "aac", "-ar", "44100", "-b:a", "128k",
+        out_path,
+    ]
+    ffmpeg_tools.run(args)
 
 
-def _title_card(title: str, size: tuple[int, int], duration: float, colors: list[str]):
-    W, H = size
-    bg = _gradient_bg(size, colors, duration)
-    wrapped = textwrap.fill(title, 16 if W < H else 28)
-    lines = [(ln, max(70, W // 12)) for ln in wrapped.split("\n")]
-    arr = _text_image(lines, (W, H), y_anchor="center")
-    return CompositeVideoClip([bg, ImageClip(arr).set_duration(duration)], size=size)
-
-
-def _item_segment(
-    item, audio: AudioFileClip, bg_path, bg_kind, size, colors, captions: bool
+def _render_with_fallback(
+    bg_path, bg_kind, overlay_png, audio_path, dur, size, fps, out_path, gradient_png
 ):
-    duration = audio.duration + 0.4  # small tail so audio isn't clipped
-    W, H = size
-    bg = _background_for(bg_path, bg_kind, size, duration, colors)
-    layers = [bg, _scrim(size, duration)]
-
-    # Big "#rank" top + item title
-    rank_lines = [(f"#{item.rank}", max(120, W // 7)), (item.title, max(54, W // 16))]
-    arr = _text_image(rank_lines, (W, H), y_anchor="top", pad=int(H * 0.08))
-    layers.append(ImageClip(arr).set_duration(duration))
-
-    if captions:
-        layers.append(_caption_clip(item.narration, size, duration))
-
-    seg = CompositeVideoClip(layers, size=size).set_audio(audio.set_duration(duration))
-    return seg.set_duration(duration)
+    """Try the chosen background; on any ffmpeg error fall back to the gradient."""
+    if bg_path:
+        try:
+            _render_segment(
+                bg_path, bg_kind == "video", overlay_png, audio_path, dur, size, fps, out_path
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            print(f"[assembler] background failed ({e}); using gradient.")
+    _render_segment(gradient_png, False, overlay_png, audio_path, dur, size, fps, out_path)
 
 
 # --------------------------------------------------------------------------- #
@@ -219,9 +194,9 @@ def _item_segment(
 # --------------------------------------------------------------------------- #
 def build_video(
     script,
-    voice_clips,            # list of VoiceClip aligned to script.items
-    intro_clip,             # VoiceClip for intro (or None)
-    outro_clip,             # VoiceClip for outro (or None)
+    voice_clips,
+    intro_clip,
+    outro_clip,
     orientation: str,
     out_path: str,
     cache_dir: str,
@@ -238,54 +213,89 @@ def build_video(
     from . import visuals as visuals_mod
 
     size = RESOLUTIONS[orientation]
-    segments = []
+    parts_dir = out_path + ".parts"
+    os.makedirs(parts_dir, exist_ok=True)
 
-    # 1. Title card (with intro narration if available)
-    title_dur = intro_clip.duration + 0.4 if intro_clip else title_seconds
-    title = _title_card(script.title, size, title_dur, fallback_colors)
-    if intro_clip:
-        title = title.set_audio(
-            AudioFileClip(intro_clip.path).set_duration(title_dur)
-        )
-    segments.append(title)
+    gradient_png = _gradient_png(size, fallback_colors, os.path.join(parts_dir, "gradient.png"))
+    seg_paths: list[str] = []
+
+    def seg_file(name: str) -> str:
+        return os.path.join(parts_dir, name)
+
+    # 1. Title card
+    title_ov = _save_png(_card_overlay(size, script.title), seg_file("title_ov.png"))
+    title_dur = (intro_clip.duration if intro_clip else title_seconds) + 0.4
+    title_out = seg_file("seg_title.mp4")
+    _render_segment(
+        gradient_png, False, title_ov, intro_clip.path, title_dur, size, fps, title_out
+    )
+    seg_paths.append(title_out)
 
     # 2. Item segments
-    for item, vc in zip(script.items, voice_clips):
+    for idx, (item, vc) in enumerate(zip(script.items, voice_clips)):
         bg_path, bg_kind = visuals_mod.fetch(
             item.keyword or script.topic, visual_source, cache_dir, orientation, pexels_key
         )
-        audio = AudioFileClip(vc.path)
-        segments.append(
-            _item_segment(item, audio, bg_path, bg_kind, size, fallback_colors, captions)
+        ov = _save_png(
+            _segment_overlay(size, item.rank, item.title, item.narration if captions else None),
+            seg_file(f"item_{idx:02d}_ov.png"),
         )
+        out_seg = seg_file(f"seg_item_{idx:02d}.mp4")
+        dur = vc.duration + 0.4
+        _render_with_fallback(
+            bg_path, bg_kind, ov, vc.path, dur, size, fps, out_seg, gradient_png
+        )
+        seg_paths.append(out_seg)
 
     # 3. Outro card
-    outro_dur = outro_clip.duration + 0.4 if outro_clip else outro_seconds
-    outro = _title_card(script.outro or "Subscribe!", size, outro_dur, fallback_colors)
-    if outro_clip:
-        outro = outro.set_audio(AudioFileClip(outro_clip.path).set_duration(outro_dur))
-    segments.append(outro)
+    outro_text = script.outro or "Subscribe!"
+    outro_ov = _save_png(_card_overlay(size, outro_text), seg_file("outro_ov.png"))
+    outro_dur = (outro_clip.duration if outro_clip else outro_seconds) + 0.4
+    outro_out = seg_file("seg_outro.mp4")
+    _render_segment(
+        gradient_png, False, outro_ov, outro_clip.path, outro_dur, size, fps, outro_out
+    )
+    seg_paths.append(outro_out)
 
-    final = concatenate_videoclips(segments, method="compose")
+    # 4. Concatenate (re-encode for safe, uniform timestamps)
+    list_file = seg_file("concat.txt")
+    with open(list_file, "w", encoding="utf-8") as f:
+        for p in seg_paths:
+            f.write(f"file '{os.path.abspath(p)}'\n")
 
-    # 4. Background music (optional, ducked under narration)
-    if music_path and os.path.exists(music_path):
-        try:
-            music = AudioFileClip(music_path).volumex(music_volume)
-            music = audio_loop(music, duration=final.duration)
-            final = final.set_audio(CompositeAudioClip([final.audio, music]))
-        except Exception as e:  # noqa: BLE001
-            print(f"[assembler] music mix skipped ({e}).")
+    concat_out = seg_file("concat.mp4")
+    ffmpeg_tools.run(
+        [
+            "-f", "concat", "-safe", "0", "-i", list_file,
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-ar", "44100",
+            concat_out,
+        ]
+    )
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    final.write_videofile(
-        out_path,
-        fps=fps,
-        codec="libx264",
-        audio_codec="aac",
-        threads=os.cpu_count() or 2,
-        preset="medium",
-        logger=None,
-    )
-    final.close()
+
+    # 5. Optional background music (looped, ducked under narration)
+    if music_path and os.path.exists(music_path):
+        try:
+            ffmpeg_tools.run(
+                [
+                    "-i", concat_out,
+                    "-stream_loop", "-1", "-i", music_path,
+                    "-filter_complex",
+                    f"[1:a]volume={music_volume}[m];"
+                    f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]",
+                    "-map", "0:v", "-map", "[a]",
+                    "-c:v", "copy", "-c:a", "aac", "-shortest",
+                    out_path,
+                ]
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[assembler] music mix skipped ({e}).")
+            shutil.move(concat_out, out_path)
+    else:
+        shutil.move(concat_out, out_path)
+
+    # 6. Clean up intermediate parts
+    shutil.rmtree(parts_dir, ignore_errors=True)
     return out_path

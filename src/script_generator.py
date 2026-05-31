@@ -109,6 +109,7 @@ def _llm_generate(topic: str, num_items: int, words_per_item: int) -> Script | N
         print("[script] openai package not installed; using offline generator.")
         return None
 
+    print(f"[script] Writing with provider {base} (model={model})...")
     client = OpenAI(base_url=base, api_key=key)
     schema = {
         "title": "string, catchy, <=70 chars",
@@ -134,27 +135,85 @@ def _llm_generate(topic: str, num_items: int, words_per_item: int) -> Script | N
         f"stays under 3 minutes for YouTube Shorts.\n"
         f"Return JSON matching this shape:\n{json.dumps(schema)}"
     )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user},
+    ]
+
+    def _call(use_json_mode: bool):
+        kwargs = {"model": model, "messages": messages, "temperature": 0.8}
+        if use_json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        return client.chat.completions.create(**kwargs)
+
+    raw = None
     try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user},
-            ],
-            temperature=0.8,
-        )
-        raw = resp.choices[0].message.content
-        raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-        data = json.loads(raw)
+        # JSON mode (supported by Groq/OpenAI) forces a parseable reply. Some
+        # providers reject it, so fall back to a plain call if needed.
+        try:
+            resp = _call(use_json_mode=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[script] JSON mode unavailable ({e}); retrying without it.")
+            resp = _call(use_json_mode=False)
+        raw = resp.choices[0].message.content or ""
+    except Exception as e:  # noqa: BLE001
+        print(f"[script] LLM request failed ({type(e).__name__}: {e}).")
+        print("[script] Falling back to the offline template.")
+        return None
+
+    data = _extract_json(raw)
+    if data is None:
+        print("[script] Could not parse JSON from the model reply; first 200 chars:")
+        print("   " + raw.strip()[:200].replace("\n", " "))
+        print("[script] Falling back to the offline template.")
+        return None
+
+    try:
         data["topic"] = topic
-        for i, it in enumerate(data.get("items", [])):
+        data.setdefault("title", f"Top {num_items} {topic.title()}")
+        data.setdefault("intro", "")
+        data.setdefault("outro", "")
+        data.setdefault("description", data.get("title", ""))
+        data.setdefault("tags", [])
+        items = data.get("items", [])
+        for i, it in enumerate(items):
+            it.setdefault("title", f"{topic} #{i + 1}")
+            it.setdefault("narration", it.get("title", ""))
             it.setdefault("keyword", it.get("title", topic))
             it["rank"] = int(it.get("rank", num_items - i))
-        print(f"[script] Generated via LLM ({model}).")
+        if not items:
+            raise ValueError("model returned zero items")
+        print(f"[script] Generated via LLM ({model}): {len(items)} items.")
         return Script.from_dict(data)
     except Exception as e:  # noqa: BLE001
-        print(f"[script] LLM generation failed ({e}); using offline generator.")
+        print(f"[script] LLM reply had unexpected shape ({e}); using offline template.")
         return None
+
+
+def _extract_json(raw: str) -> dict | None:
+    """Pull a JSON object out of a model reply, tolerating code fences / prose."""
+    if not raw:
+        return None
+    text = raw.strip()
+    # Strip ``` / ```json fences if present.
+    text = re.sub(r"```(?:json)?", "", text).strip()
+    # Try the whole thing, then the first {...last} span.
+    for candidate in (text, _brace_span(text)):
+        if not candidate:
+            continue
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _brace_span(text: str) -> str | None:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return None
 
 
 def _offline_generate(topic: str, num_items: int, words_per_item: int) -> Script:

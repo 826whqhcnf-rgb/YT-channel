@@ -146,25 +146,39 @@ def _llm_generate(topic: str, num_items: int, words_per_item: int) -> Script | N
         {"role": "user", "content": user},
     ]
 
-    def _call(use_json_mode: bool):
-        kwargs = {"model": model, "messages": messages, "temperature": 0.8}
+    # Gemini 2.0 Flash can hit quota; fall back to 1.5 Flash automatically.
+    models_to_try = [model]
+    if "gemini-2.0-flash" in model:
+        models_to_try.append(model.replace("gemini-2.0-flash", "gemini-1.5-flash"))
+
+    def _call(m: str, use_json_mode: bool):
+        kwargs = {"model": m, "messages": messages, "temperature": 0.8}
         if use_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         return client.chat.completions.create(**kwargs)
 
     raw = None
-    try:
-        # JSON mode (supported by Groq/OpenAI) forces a parseable reply. Some
-        # providers reject it, so fall back to a plain call if needed.
+    for attempt_model in models_to_try:
         try:
-            resp = _call(use_json_mode=True)
+            try:
+                resp = _call(attempt_model, use_json_mode=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[script] JSON mode unavailable ({e}); retrying without it.")
+                resp = _call(attempt_model, use_json_mode=False)
+            raw = resp.choices[0].message.content or ""
+            model = attempt_model  # record which one succeeded
+            break
         except Exception as e:  # noqa: BLE001
-            print(f"[script] JSON mode unavailable ({e}); retrying without it.")
-            resp = _call(use_json_mode=False)
-        raw = resp.choices[0].message.content or ""
-    except Exception as e:  # noqa: BLE001
-        print(f"[script] LLM request failed ({type(e).__name__}: {e}).")
-        print("[script] Falling back to the offline template.")
+            err = str(e)
+            if "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
+                if attempt_model != models_to_try[-1]:
+                    print(f"[script] {attempt_model} quota exceeded; trying fallback model.")
+                    continue
+            print(f"[script] LLM request failed ({type(e).__name__}: {e}).")
+            print("[script] Falling back to the offline template.")
+            return None
+    if raw is None:
+        print("[script] All models hit quota limits. Falling back to the offline template.")
         return None
 
     data = _extract_json(raw)

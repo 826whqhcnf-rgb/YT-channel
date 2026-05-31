@@ -13,18 +13,39 @@ def ask(prompt, default=""):
     return val if val else default
 
 def check_openrouter(key):
+    """Returns (status, message). status: 'ok' | 'valid_busy' | 'bad'."""
     try:
         from openai import OpenAI
-        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
-        r = client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct:free",
-            messages=[{"role":"user","content":"Reply with the single word: working"}],
-            max_tokens=5,
-        )
-        reply = r.choices[0].message.content or ""
-        return True, reply.strip()
-    except Exception as e:
-        return False, str(e)
+    except ImportError:
+        return "bad", "openai package not installed (run: pip install -r requirements.txt)"
+
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
+    models = [
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "google/gemma-3-27b-it:free",
+    ]
+    last = ""
+    for model in models:
+        try:
+            r = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Reply with the single word: working"}],
+                max_tokens=5,
+            )
+            return "ok", (r.choices[0].message.content or "").strip()
+        except Exception as e:
+            last = str(e)
+            low = last.lower()
+            # A bad/invalid key fails auth regardless of which model — stop early.
+            if "401" in last or "no auth" in low or "invalid api key" in low or "user not found" in low:
+                return "bad", last
+            # 429 / rate limit / temporarily busy: key is fine, model just busy.
+            continue
+    low = last.lower()
+    if "429" in last or "rate" in low or "temporarily" in low or "busy" in low:
+        return "valid_busy", last
+    return "bad", last
 
 def check_pexels(key):
     try:
@@ -59,12 +80,17 @@ def main():
     key = ask(f"Paste your OpenRouter key{hint}: ", current)
     if key and key != current:
         print("  Testing key...", end=" ", flush=True)
-        ok, msg = check_openrouter(key)
-        if ok:
+        status, msg = check_openrouter(key)
+        if status == "ok":
             print(f"✅ Works! (model replied: '{msg}')")
+        elif status == "valid_busy":
+            print("✅ Key is valid! (the free models are just busy right now — "
+                  "that's normal and it'll work when you make a video.)")
         else:
-            print(f"❌ Failed: {msg}")
-            if ask("Save anyway and continue? (y/n): ").lower() != "y":
+            print(f"❌ Key looks invalid: {msg}")
+            ans = ask("Save it anyway? Type y to keep, n to re-enter (y/n): ").lower()
+            if ans != "y":
+                print("  Not saved. Re-run 'python setup.py' to try again.")
                 sys.exit(1)
     elif key == current and current:
         print("  Keeping existing key.")

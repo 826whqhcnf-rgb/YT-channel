@@ -199,15 +199,54 @@ def build(script, voice_clips, out_path: str, cfg: dict) -> str:
             f.write(f"file '{os.path.abspath(p)}'\n")
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    music = resolve_music(cfg)
+    concat_target = os.path.join(work, "concat.mp4") if music else out_path
     try:
-        ff.run(["-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", out_path])
+        ff.run(["-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", concat_target])
     except Exception as e:
         print(f"[render] stream-copy failed ({e}); re-encoding.")
         ff.run([
             "-f", "concat", "-safe", "0", "-i", lst,
             "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-threads", "2", "-c:a", "aac", "-ar", "44100", out_path,
+            "-threads", "2", "-c:a", "aac", "-ar", "44100", concat_target,
         ])
+
+    # --- Optional background music (looped, ducked under the narration) ---
+    if music:
+        vol = cfg.get("music_volume", 0.12)
+        print(f"[render] mixing music: {os.path.basename(music)} (volume {vol})")
+        try:
+            ff.run([
+                "-i", concat_target,
+                "-stream_loop", "-1", "-i", music,
+                "-filter_complex",
+                f"[1:a]volume={vol}[m];"
+                f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]",
+                "-map", "0:v", "-map", "[a]",
+                "-c:v", "copy", "-c:a", "aac", "-shortest", out_path,
+            ])
+        except Exception as e:
+            print(f"[render] music mix failed ({e}); using narration only.")
+            shutil.move(concat_target, out_path)
 
     shutil.rmtree(work, ignore_errors=True)
     return out_path
+
+
+def resolve_music(cfg: dict) -> str | None:
+    """Find a music track. cfg['music'] can be a file or a folder of tracks
+    (a random one is chosen). Returns None if nothing is available."""
+    import random
+    m = cfg.get("music", "assets/music")
+    if not m:
+        return None
+    if os.path.isfile(m):
+        return m
+    if os.path.isdir(m):
+        tracks = [
+            os.path.join(m, f) for f in os.listdir(m)
+            if f.lower().endswith((".mp3", ".wav", ".m4a", ".ogg"))
+        ]
+        if tracks:
+            return random.choice(tracks)
+    return None

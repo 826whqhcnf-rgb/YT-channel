@@ -50,10 +50,8 @@ def choose_models(key: str | None = None) -> list[str]:
 
 
 @dataclass
-class Item:
-    rank: int
-    title: str
-    narration: str
+class Segment:
+    text: str
     keyword: str = ""
 
 
@@ -62,7 +60,7 @@ class Script:
     topic: str
     title: str
     hook: str
-    items: list[Item] = field(default_factory=list)
+    segments: list[Segment] = field(default_factory=list)
     outro: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=list)
@@ -75,34 +73,45 @@ class Script:
     def load(path: str) -> "Script":
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
-        items = [Item(**it) for it in d.pop("items", [])]
-        return Script(**d, items=items)
+        segments = [Segment(**s) for s in d.pop("segments", [])]
+        return Script(**d, segments=segments)
 
 
-SYSTEM = """You write scripts for a viral TikTok / YouTube Shorts channel that posts
-Top-N countdown videos. The audience is general, curious, and easily bored.
+SYSTEM = """You are a viral short-form STORYTELLER for TikTok, YouTube Shorts and Reels —
+the faceless "Reddit story" format (think r/AmItheAsshole, r/TIFU, r/ProRevenge,
+r/MaliciousCompliance, r/relationship_advice, r/nosleep). A calm voice narrates
+a gripping first-person story over background video while captions appear on screen.
 
-Rules:
-- HOOK: the very first sentence must shock or intrigue — no "in this video", no "welcome".
-- Each item is ONE true, verifiable, surprising fact. No filler words.
-- Narration is punchy spoken-word: short sentences, active voice, present tense.
-- Build excitement toward #1 (the most jaw-dropping).
-- "keyword" is a concrete 2-3 word phrase a stock footage site would have (e.g. "deep ocean floor", "lava erupting", "crowd cheering"). Never abstract.
-- Return STRICT JSON — no markdown, no code fences, nothing outside the JSON object."""
+What makes these go viral — follow ALL of it:
+- HOOK FIRST: the opening line must stop the scroll in 3 seconds. Drop the listener
+  straight into conflict, betrayal, or a shocking statement. NO "so basically", NO
+  "story time", NO throat-clearing.
+- First person ("I", "my"), conversational, present-tense urgency, like a real person venting.
+- Specific vivid details (names, places, exact things said) make it feel real.
+- Build tension → a turning point → a satisfying twist, payoff, or revenge near the end.
+- End on a CLIFFHANGER or a question that begs comments ("Was I wrong?", "Part 2?").
+- Believable and PG-13: drama, revenge, embarrassment, mild creepiness are great.
+  NO explicit gore, sexual content, slurs, hate, or real private data.
+- "keyword" for each part is a concrete, mood-matching scene a stock site would have
+  (e.g. "wedding reception", "rainy city street night", "person crying", "empty office").
+- Return STRICT JSON only — no markdown, no code fences, nothing outside the JSON object."""
 
 
-USER_TEMPLATE = """Write a Top {n} countdown video script about: {topic}
+USER_TEMPLATE = """Write a viral first-person story video script based on this prompt: {topic}
+
+Make it about {total_words} words total (a {est_seconds}-second video) so it runs over a minute.
+Break the story into exactly {n} caption segments of roughly {wpw} words each, in order.
 
 Return JSON with exactly this shape:
 {{
-  "title": "Top {n} {title_hint} (catchy, ≤60 chars)",
-  "hook": "1-2 sentence opening that grabs attention immediately",
-  "items": [
-    {{"rank": {n}, "title": "short name", "narration": "~{wpw} spoken words — one surprising fact", "keyword": "2-3 word footage search"}},
-    ... down to rank 1 (most jaw-dropping last)
+  "title": "the on-screen post-style title, e.g. 'AITA for ruining my sister's wedding?' (≤70 chars)",
+  "hook": "the spoken opening 1-2 sentences — the single most important, scroll-stopping line",
+  "segments": [
+    {{"text": "~{wpw} words continuing the story", "keyword": "concrete mood-matching B-roll scene"}},
+    ... exactly {n} segments that tell the full story in order, ending with the twist/payoff
   ],
-  "outro": "1 punchy sentence — tell them to follow/subscribe for more",
-  "description": "YouTube/TikTok description, 2-3 sentences + relevant hashtags",
+  "outro": "a cliffhanger + call to action, e.g. 'Was I wrong? Follow for part 2.'",
+  "description": "a TikTok/YouTube caption with 3-5 relevant hashtags",
   "tags": ["8 to 12 lowercase tags"]
 }}"""
 
@@ -119,28 +128,33 @@ def _extract_json(text: str) -> dict | None:
 
 def generate(topic: str, cfg: dict) -> Script:
     key = cfg.get("openrouter_key", "")
-    n = cfg.get("num_items", 7)
-    wpw = cfg.get("words_per_item", 18)
-    title_hint = topic.strip().rstrip("?.!").title()
+    # num_items / words_per_item now mean: number of caption segments and words each.
+    # Floors keep the story over a minute even if an old config has small values.
+    n = max(cfg.get("num_items", 12), 10)
+    wpw = max(cfg.get("words_per_item", 25), 22)
 
     if key:
-        result = _llm_generate(topic, n, wpw, title_hint, key)
+        result = _llm_generate(topic, n, wpw, key)
         if result:
             return result
 
-    return _offline(topic, n)
+    return _offline(topic, n, wpw)
 
 
-def _llm_generate(topic, n, wpw, title_hint, key) -> Script | None:
+def _llm_generate(topic, n, wpw, key) -> Script | None:
     try:
         from openai import OpenAI
     except ImportError:
         print("[script] openai not installed.")
         return None
 
+    total_words = n * wpw
+    est_seconds = round(total_words / 2.5)
     models = choose_models(key)
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
-    user_msg = USER_TEMPLATE.format(n=n, topic=topic, title_hint=title_hint, wpw=wpw)
+    user_msg = USER_TEMPLATE.format(
+        topic=topic, n=n, wpw=wpw, total_words=total_words, est_seconds=est_seconds
+    )
 
     for model in models:
         print(f"[script] Writing with {model}...", end=" ", flush=True)
@@ -151,32 +165,29 @@ def _llm_generate(topic, n, wpw, title_hint, key) -> Script | None:
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content": user_msg},
                 ],
-                temperature=0.85,
-                max_tokens=2000,
+                temperature=0.9,
+                max_tokens=2600,
             )
             raw = resp.choices[0].message.content or ""
             data = _extract_json(raw)
             if not data:
                 print(f"bad JSON (first 100 chars: {raw[:100]}); trying next model.")
                 continue
-            items = []
-            for i, it in enumerate(data.get("items", [])):
-                items.append(Item(
-                    rank=int(it.get("rank", n - i)),
-                    title=str(it.get("title", "")),
-                    narration=str(it.get("narration", "")),
-                    keyword=str(it.get("keyword", topic)),
-                ))
-            if not items:
-                print("no items returned; trying next model.")
+            segments = []
+            for s in data.get("segments", []):
+                text = str(s.get("text", "")).strip()
+                if text:
+                    segments.append(Segment(text=text, keyword=str(s.get("keyword", topic))))
+            if not segments:
+                print("no story segments returned; trying next model.")
                 continue
-            print(f"✅ {len(items)} items.")
+            print(f"✅ story with {len(segments)} parts.")
             return Script(
                 topic=topic,
-                title=str(data.get("title", f"Top {n} {topic.title()}")),
+                title=str(data.get("title", topic.title())),
                 hook=str(data.get("hook", "")),
-                items=items,
-                outro=str(data.get("outro", "Follow for more!")),
+                segments=segments,
+                outro=str(data.get("outro", "Was I wrong? Follow for part 2.")),
                 description=str(data.get("description", "")),
                 tags=list(data.get("tags", [])),
             )
@@ -197,21 +208,23 @@ def _llm_generate(topic, n, wpw, title_hint, key) -> Script | None:
     return None
 
 
-def _offline(topic: str, n: int) -> Script:
+def _offline(topic: str, n: int, wpw: int) -> Script:
     print("[script] Using offline template — run python setup.py to add an AI writer key.")
     clean = topic.strip().rstrip("?.!")
-    items = [
-        Item(rank=r, title=f"{clean} #{n-r+1}",
-             narration=f"Number {r}: a surprising fact about {clean.lower()}. Replace this with a real fact.",
-             keyword=clean)
-        for r in range(n, 0, -1)
+    segments = [
+        Segment(
+            text=f"Part {i+1} of the story about {clean.lower()}. "
+                 f"Replace this placeholder with the real story by adding an AI writer key.",
+            keyword=clean,
+        )
+        for i in range(n)
     ]
     return Script(
         topic=topic,
-        title=f"Top {n} {clean.title()}",
-        hook=f"Here are the top {n} {clean.lower()} — and number one will genuinely shock you.",
-        items=items,
-        outro="Follow for a new countdown every day!",
-        description=f"Top {n} {clean}. New videos daily — follow and turn on notifications!",
-        tags=[w.lower() for w in clean.split()][:8],
+        title=clean.title(),
+        hook=f"You won't believe what happened with {clean.lower()}.",
+        segments=segments,
+        outro="Was I wrong? Follow for part 2.",
+        description=f"{clean}. #story #reddit #storytime",
+        tags=[w.lower() for w in clean.split()][:8] + ["story", "storytime", "reddit"],
     )

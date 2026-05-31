@@ -1,25 +1,29 @@
-strangest deep sea creatures
-unsolved mysteries of ancient history
-most dangerous animals on earth
-abandoned places frozen in time
-most dangerous roads in the world
-animals with unbelievable superpowers
-biggest heists ever pulled off
-deadliest natural disasters in history
-strangest things found in space
-most isolated places on earth
-fastest animals alive
-most venomous creatures on earth
-rarest gemstones ever discovered
-creepiest abandoned theme parks
-ancient inventions that were ahead of their time
-biggest predators in the ocean
-most expensive things ever sold at auction
-strangest weather events ever recorded
-things that can survive a nuclear blast
-most extreme places humans actually live
-most dangerous volcanoes on earth
-creepiest unsolved disappearances
-deadliest plants in the world
-strangest things discovered by archaeologists
-most bizarre world records ever set
+# Story prompts for the AI writer (one per line; # lines are ignored).
+# Each line is a seed the writer turns into a full first-person viral story.
+# Mix of the niches that perform best: AITA, TIFU, revenge, malicious
+# compliance, entitled people, relationship drama, and creepy/true-scary.
+AITA for exposing my sister's secret at her own wedding
+AITA for refusing to give my inheritance to my brother
+TIFU by replying all to the entire company
+my entitled neighbor parked in my spot, so I got petty revenge
+malicious compliance: my boss said follow the rules exactly, so I did
+AITA for kicking my best friend out of my apartment
+the new guy tried to steal my promotion, so I let him fail
+my landlord kept my deposit, so I took him to court and won
+TIFU by trusting my coworker with my password
+AITA for telling my mother-in-law to leave my house
+entitled customer demanded a refund, so I showed her the receipt
+my ex tried to ruin my reputation, so I exposed the truth
+the night shift at my job got really creepy and I quit
+AITA for not inviting my dad to my graduation
+malicious compliance: HR said no overtime, so the project missed its deadline
+my roommate ate my food for months, so I set a trap
+AITA for revealing why I really got divorced
+the customer who screamed at me got what was coming
+TIFU by sending a text about my boss to my boss
+my sister stole my wedding date, so I changed the whole plan
+something kept knocking on my door every night at 3am
+AITA for refusing to babysit my sister's kids for free
+the coworker who took credit for my work finally got caught
+my parents gave my college fund to my brother, so I moved out
+I found out my best friend was lying to me for years

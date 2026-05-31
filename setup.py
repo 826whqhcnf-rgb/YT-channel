@@ -137,8 +137,8 @@ def main():
     print(f"  Using: {cfg['voice']}")
 
     # --- Defaults ---
-    cfg.setdefault("num_items", 7)
-    cfg.setdefault("words_per_item", 18)
+    cfg.setdefault("num_items", 12)        # number of story caption segments
+    cfg.setdefault("words_per_item", 25)   # words per segment (~120s story)
     cfg.setdefault("fps", 30)
     cfg.setdefault("upload", {"youtube": False, "tiktok": False})
 

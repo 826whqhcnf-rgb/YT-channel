@@ -30,16 +30,18 @@ def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool
         print(f"  python run.py --topic \"{topic}\" --script {script_file}")
         return
 
-    # 2. Voiceover — hook first, then items, then outro
+    # 2. Voiceover — hook first, then each story segment, then outro
     voice_cfg = cfg.get("voice", "en-US-AndrewNeural")
-    texts = [script.hook] + [it.narration for it in script.items] + [script.outro]
+    texts = [script.hook] + [s.text for s in script.segments] + [script.outro]
     print(f"[pipeline] Synthesising {len(texts)} voice clips ({voice_cfg})...")
     clips = voice.synthesize(texts, os.path.join(out_dir, "audio"), voice_cfg)
 
     total_dur = sum(c.duration for c in clips)
     print(f"[pipeline] Estimated length: ~{total_dur:.0f}s")
-    if total_dur > 170:
-        print("[pipeline] ⚠️  Over 3 min — lower num_items or words_per_item in config.json")
+    if total_dur < 60:
+        print("[pipeline] ⚠️  Under 1 min — raise num_items/words_per_item in config.json")
+    elif total_dur > 180:
+        print("[pipeline] ⚠️  Over 3 min (YouTube Shorts cap) — lower num_items/words_per_item")
 
     # 3. Render
     out_video = os.path.join(out_dir, f"{_slug(script.title)}.mp4")

@@ -79,36 +79,30 @@ def _save_png(arr: np.ndarray, path: str) -> str:
     return path
 
 
-def _overlay_for_item(rank: int, title: str, narration: str) -> np.ndarray:
-    # Semi-transparent scrim
-    img = Image.new("RGBA", SIZE, (0, 0, 0, 100))
+def _overlay_for_story(title: str, caption: str) -> np.ndarray:
+    """Story segment: persistent post title at top + big centred caption."""
+    img = Image.new("RGBA", SIZE, (0, 0, 0, 110))
     draw = ImageDraw.Draw(img)
 
-    # Big rank number (top-centre)
-    rank_font = _font(max(180, W // 5))
-    draw.text((W//2, int(H*0.12)), f"#{rank}", font=rank_font,
-              fill=(255,220,0,255), anchor="mm",
-              stroke_width=6, stroke_fill=(0,0,0,220))
-
-    # Item title (below rank)
-    title_font = _font(max(64, W // 14))
-    wrapped = textwrap.fill(title, 18)
-    ty = int(H * 0.24)
-    for line in wrapped.split("\n"):
+    # Small persistent title banner near the top
+    title_font = _font(max(40, W // 26))
+    ty = int(H * 0.09)
+    for line in textwrap.fill(title, 30).split("\n")[:2]:
         draw.text((W//2, ty), line, font=title_font,
-                  fill=(255,255,255,255), anchor="mm",
-                  stroke_width=4, stroke_fill=(0,0,0,200))
-        ty += title_font.size + 8
+                  fill=(255, 220, 0, 255), anchor="mm",
+                  stroke_width=3, stroke_fill=(0, 0, 0, 220))
+        ty += title_font.size + 6
 
-    # Caption (bottom)
-    cap_font = _font(max(42, W // 22))
-    wrapped_cap = textwrap.fill(narration, 28)
-    cy = int(H * 0.72)
-    for line in wrapped_cap.split("\n")[:4]:
+    # Big centred caption (the current line being narrated)
+    cap_font = _font(max(56, W // 17))
+    wrapped = textwrap.fill(caption, 22).split("\n")[:6]
+    block_h = len(wrapped) * (cap_font.size + 10)
+    cy = (H - block_h) // 2
+    for line in wrapped:
         draw.text((W//2, cy), line, font=cap_font,
-                  fill=(240,240,240,255), anchor="mm",
-                  stroke_width=3, stroke_fill=(0,0,0,200))
-        cy += cap_font.size + 6
+                  fill=(255, 255, 255, 255), anchor="mm",
+                  stroke_width=4, stroke_fill=(0, 0, 0, 220))
+        cy += cap_font.size + 10
 
     return np.array(img)
 
@@ -157,23 +151,24 @@ def build(script, voice_clips, out_path: str, cfg: dict) -> str:
     grad = gradient_png(os.path.join(work, "grad.png"))
     parts = []
 
-    total = len(script.items) + 2
+    total = len(script.segments) + 2
 
-    # --- Hook card ---
-    print(f"[render] [1/{total}] hook card")
+    # --- Hook card (the scroll-stopping opening line) ---
+    print(f"[render] [1/{total}] hook")
     ov = _save_png(_overlay_for_card(script.hook), os.path.join(work, "hook_ov.png"))
     hook_dur = voice_clips[0].duration + 0.3
     _render_seg(grad, False, ov, voice_clips[0].path, hook_dur,
                 os.path.join(work, "seg_00.mp4"))
     parts.append(os.path.join(work, "seg_00.mp4"))
 
-    # --- Item segments (voice_clips[1] .. voice_clips[N]) ---
-    for i, (item, vc) in enumerate(zip(script.items, voice_clips[1:])):
-        print(f"[render] [{i+2}/{total}] #{item.rank}: {item.title}")
-        bg_path, bg_kind = footage.fetch(item.keyword or script.topic, cache, pexels_key)
+    # --- Story segments (voice_clips[1] .. voice_clips[N]) ---
+    for i, (seg_data, vc) in enumerate(zip(script.segments, voice_clips[1:])):
+        preview = seg_data.text[:40].replace("\n", " ")
+        print(f"[render] [{i+2}/{total}] {preview}...")
+        bg_path, bg_kind = footage.fetch(seg_data.keyword or script.topic, cache, pexels_key)
         ov = _save_png(
-            _overlay_for_item(item.rank, item.title, item.narration),
-            os.path.join(work, f"item_{i:02d}_ov.png"),
+            _overlay_for_story(script.title, seg_data.text),
+            os.path.join(work, f"seg_{i:02d}_ov.png"),
         )
         seg = os.path.join(work, f"seg_{i+1:02d}.mp4")
         dur = vc.duration + 0.3

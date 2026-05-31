@@ -132,11 +132,11 @@ def _offline_generate(topic: str, num_items: int, words_per_item: int) -> Script
     items: list[Item] = []
     for rank in range(num_items, 0, -1):
         idx = num_items - rank + 1
+        # Short placeholder so the default video fits the Shorts limit. Replace
+        # with a real fact (edit script.json) or connect an AI writer.
         narration = (
-            f"Coming in at number {rank}: a remarkable example of {clean.lower()}. "
-            f"This is placeholder narration of roughly {words_per_item} words — "
-            f"replace it with a real fact by editing the script JSON or by "
-            f"setting SCRIPT_API_BASE / SCRIPT_API_KEY to use an AI model."
+            f"Number {rank}: a fascinating example of {clean.lower()}. "
+            f"Swap this placeholder for a real fact, or connect an AI writer."
         )
         items.append(
             Item(rank=rank, title=f"{clean} #{idx}", narration=narration, keyword=clean)

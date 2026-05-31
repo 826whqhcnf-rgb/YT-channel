@@ -18,6 +18,9 @@ def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool
     else:
         script = _make_script(topic, cfg, script_mod)
 
+    if script is None:
+        return None  # _make_script already explained why
+
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = os.path.join("output", f"{_slug(script.title)}-{ts}")
     os.makedirs(out_dir, exist_ok=True)
@@ -53,20 +56,25 @@ def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool
 
 
 def _make_script(topic, cfg, script_mod):
-    """Default source is real Reddit posts; fall back to AI, then offline."""
+    """Build a script. Reddit is the source; AI is only used if you explicitly
+    set source='ai' in config.json. Returns None on failure (no silent fallback)."""
     source = cfg.get("source", "reddit")
-    if source == "reddit":
-        try:
-            from . import reddit
-            post = reddit.fetch_story(
-                cfg.get("subreddits"),
-                min_words=cfg.get("min_words", 150),
-                max_words=cfg.get("max_words", 420),
-            )
-            if post:
-                print(f"[pipeline] Reddit story from r/{post['subreddit']}: {post['title'][:60]}")
-                return script_mod.from_reddit(post, cfg.get("words_per_item", 25))
-            print("[pipeline] No fresh Reddit story found; falling back to AI writer.")
-        except Exception as e:  # noqa: BLE001
-            print(f"[pipeline] Reddit fetch failed ({e}); falling back to AI writer.")
-    return script_mod.generate(topic, cfg)
+    if source == "ai":
+        return script_mod.generate(topic, cfg)
+
+    from . import reddit
+    post = reddit.fetch_story(
+        cfg.get("subreddits"),
+        min_words=cfg.get("min_words", 120),
+        max_words=cfg.get("max_words", 320),
+    )
+    if post:
+        print(f"[pipeline] Reddit story from r/{post['subreddit']}: {post['title'][:60]}")
+        return script_mod.from_reddit(post, cfg.get("words_per_item", 25))
+    # No silent fallback to the AI/placeholder writer — stop and explain.
+    print("\n[pipeline] ❌ Could not get a Reddit story. Nothing was generated.")
+    print("  • If it says 'blocked', your network is refusing Reddit — try again,")
+    print("    or tell me and I'll switch the source.")
+    print("  • If you've used many stories, run:  python run.py --reset-stories")
+    print("  • To use the AI writer instead, set \"source\": \"ai\" in config.json")
+    return None

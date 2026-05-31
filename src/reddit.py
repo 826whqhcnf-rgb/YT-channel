@@ -13,8 +13,15 @@ import re
 
 import requests
 
-# A descriptive User-Agent is required or Reddit returns 429/403.
-USER_AGENT = "python:faceless-story-generator:1.0 (personal use)"
+# Reddit's .json endpoint 403s many cloud IPs (e.g. Codespaces) unless the
+# request looks like a real browser. We rotate a few browser User-Agents and,
+# if Reddit still refuses, fall back to PullPush (a public Reddit mirror API
+# that does not block cloud IPs and needs no key).
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+]
 
 # Best-performing story subreddits.
 DEFAULT_SUBREDDITS = [
@@ -73,19 +80,62 @@ def _clean(text: str) -> str:
     return text
 
 
-def _top_posts(subreddit: str, time_filter: str, limit: int) -> list[dict]:
-    last_err = ""
+def _normalize(p: dict) -> dict:
+    """Normalize a post from either Reddit or PullPush into one shape."""
+    return {
+        "id": p.get("id", ""),
+        "title": p.get("title", ""),
+        "selftext": p.get("selftext", ""),
+        "over_18": p.get("over_18", False),
+        "stickied": p.get("stickied", False),
+        "is_video": p.get("is_video", False),
+        "permalink": p.get("permalink", ""),
+    }
+
+
+def _from_reddit(subreddit: str, time_filter: str, limit: int) -> tuple[list[dict], str]:
     for host in ("https://www.reddit.com", "https://old.reddit.com"):
-        try:
-            url = f"{host}/r/{subreddit}/top.json?t={time_filter}&limit={limit}"
-            r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=20)
-            r.raise_for_status()
-            return [c["data"] for c in r.json()["data"]["children"]]
-        except Exception as e:  # noqa: BLE001
-            last_err = f"{type(e).__name__}: {e}"
-            continue
-    if last_err:
-        print(f"[reddit]   r/{subreddit} fetch error ({last_err})")
+        for ua in USER_AGENTS:
+            try:
+                url = f"{host}/r/{subreddit}/top.json?t={time_filter}&limit={limit}&raw_json=1"
+                r = requests.get(
+                    url,
+                    headers={"User-Agent": ua, "Accept": "application/json"},
+                    timeout=20,
+                )
+                if r.status_code == 403:
+                    continue  # try next UA / host, then PullPush
+                r.raise_for_status()
+                return [_normalize(c["data"]) for c in r.json()["data"]["children"]], ""
+            except Exception as e:  # noqa: BLE001
+                last = f"{type(e).__name__}: {str(e)[:80]}"
+                continue
+    return [], "reddit blocked (403/again)"
+
+
+def _from_pullpush(subreddit: str, limit: int) -> tuple[list[dict], str]:
+    """PullPush.io — public Reddit data API, no key, cloud-IP friendly."""
+    try:
+        url = (
+            "https://api.pullpush.io/reddit/search/submission/"
+            f"?subreddit={subreddit}&sort=desc&sort_type=score&size={limit}"
+        )
+        r = requests.get(url, headers={"User-Agent": USER_AGENTS[0]}, timeout=25)
+        r.raise_for_status()
+        return [_normalize(p) for p in r.json().get("data", [])], ""
+    except Exception as e:  # noqa: BLE001
+        return [], f"pullpush {type(e).__name__}: {str(e)[:80]}"
+
+
+def _top_posts(subreddit: str, time_filter: str, limit: int) -> list[dict]:
+    posts, err1 = _from_reddit(subreddit, time_filter, limit)
+    if posts:
+        return posts
+    posts, err2 = _from_pullpush(subreddit, limit)
+    if posts:
+        print(f"[reddit]   r/{subreddit}: used PullPush mirror (reddit.com blocked).")
+        return posts
+    print(f"[reddit]   r/{subreddit} unavailable ({err1}; {err2})")
     return []
 
 

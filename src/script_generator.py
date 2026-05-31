@@ -86,8 +86,14 @@ def _resolve_provider() -> tuple[str, str, str]:
     """Figure out base URL / key / model from SCRIPT_PROVIDER + overrides."""
     provider = os.getenv("SCRIPT_PROVIDER", "").strip().lower()
     base = os.getenv("SCRIPT_API_BASE", "").strip()
-    key = os.getenv("SCRIPT_API_KEY", "").strip()
+    key = os.getenv("SCRIPT_API_KEY", "").strip().strip("'\"")
     model = os.getenv("SCRIPT_MODEL", "").strip()
+
+    # Catch the most common setup mistake: the placeholder was never replaced.
+    if key and ("PASTE" in key.upper() or key.upper().endswith("YOUR_KEY_HERE")):
+        print("[script] SCRIPT_API_KEY in .env is still the placeholder text — "
+              "replace it with your real key. Using offline template for now.")
+        key = ""
 
     if provider in PROVIDERS:
         p_base, p_model = PROVIDERS[provider]

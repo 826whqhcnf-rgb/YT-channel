@@ -34,6 +34,10 @@ def main():
         print("yt-dlp is not installed. Run:  pip install -r requirements.txt")
         return 1
 
+    # Strip stray wrapping that often comes from pasting (angle brackets, quotes,
+    # zero-width/whitespace) so "<https://...>" still works.
+    url = args.url.strip().strip("<>\"' \t​")
+
     os.makedirs(DEST_DIR, exist_ok=True)
     name = args.name or "%(title).50s-%(id)s"
     # keep filenames filesystem-safe
@@ -45,7 +49,7 @@ def main():
         "-f", fmt,
         "--merge-output-format", "mp4",
         "-o", outtmpl,
-        args.url,
+        url,
     ]
     print("Downloading gameplay clip... (this can take a minute)")
     print("⚠️  Make sure this video is licensed for reuse (no-copyright / CC).")

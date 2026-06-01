@@ -40,12 +40,47 @@ def _yt_service(client_secret: str):
                     f"YouTube client secret not found at '{client_secret}'. "
                     "See UPLOAD_SETUP.md (YouTube section)."
                 )
-            flow = InstalledAppFlow.from_client_secrets_file(client_secret, YT_SCOPES)
-            # console flow works in a headless Codespace (prints a URL to visit)
-            creds = flow.run_console() if hasattr(flow, "run_console") else flow.run_local_server(port=0)
+            creds = _manual_oauth(client_secret, InstalledAppFlow)
         with open(YT_TOKEN, "w", encoding="utf-8") as f:
             f.write(creds.to_json())
     return build("youtube", "v3", credentials=creds)
+
+
+def _manual_oauth(client_secret: str, InstalledAppFlow):
+    """Headless copy-paste OAuth — works in a Codespace (no local browser).
+
+    Uses a localhost redirect (the modern, non-deprecated method). You approve
+    in your own browser; it redirects to a 'can't reach this page' localhost URL
+    whose address bar contains the code. Paste that whole URL (or just the code)
+    back here. run_console()/oob are gone, so we drive the flow manually.
+    """
+    import re
+    from urllib.parse import urlparse, parse_qs
+
+    flow = InstalledAppFlow.from_client_secrets_file(
+        client_secret, YT_SCOPES, redirect_uri="http://localhost:1/"
+    )
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+    print("\n" + "=" * 70)
+    print("AUTHORIZE YOUTUBE (one time):")
+    print("1. Open this URL in your browser (long-press the line to copy it):\n")
+    print("   " + auth_url + "\n")
+    print("2. Sign in with your channel's Google account and click Allow.")
+    print("   (If it warns 'unverified app': click Advanced -> go to <your app>.)")
+    print("3. Your browser will try to open a 'localhost' page that WON'T LOAD —")
+    print("   that's expected. Copy the WHOLE address from the address bar")
+    print("   (it contains '...code=...') and paste it below.")
+    print("=" * 70)
+    pasted = input("\nPaste the localhost URL (or just the code): ").strip()
+
+    code = pasted
+    if "code=" in pasted:
+        qs = parse_qs(urlparse(pasted).query)
+        code = qs.get("code", [pasted])[0]
+    code = re.sub(r"\s+", "", code)
+    flow.fetch_token(code=code)
+    return flow.credentials
+
 
 
 def upload_youtube(video_path: str, title: str, description: str, tags: list[str],

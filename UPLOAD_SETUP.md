@@ -26,9 +26,14 @@ python run.py --batch 5 --upload youtube  # post a whole backlog
 5. In your Codespace, upload that file and name it **`client_secret.json`**
    (right-click the file list → Upload), or set its path in `config.json` →
    `upload.youtube_client_secret`.
-6. First post prints a Google URL — open it, sign in, approve the **upload**
-   permission, paste the code back. A reusable `youtube_token.json` is saved,
-   so you only authorize once.
+6. First post prints a Google URL. Open it in your browser, sign in, approve
+   the **upload** permission. Your browser then tries to open a `localhost`
+   page that **won't load — that's expected**. Copy the WHOLE address from the
+   address bar (it contains `...code=...`) and paste it back into the terminal.
+   A reusable `youtube_token.json` is saved, so you only authorize once.
+
+   > Make sure your OAuth client is the **Desktop app** type (step 4) — that
+   > allows this localhost flow with no extra configuration.
 
 Settings in `config.json` → `upload`:
 - `youtube_privacy`: `public` | `unlisted` | `private` (start with `unlisted`

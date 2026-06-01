@@ -47,13 +47,23 @@ def _yt_service(client_secret: str):
 
 
 def _manual_oauth(client_secret: str, InstalledAppFlow):
-    """Headless copy-paste OAuth — works in a Codespace (no local browser).
+    """Authorize YouTube. On a real computer this opens your browser and catches
+    the redirect automatically (one click). If that's not possible (headless /
+    Codespace), it falls back to a copy-paste flow."""
+    # 1. Try the automatic local-server flow — works on a normal computer.
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(client_secret, YT_SCOPES)
+        print("\n[upload] Opening your browser to authorize YouTube...")
+        print("[upload] If a browser doesn't open, copy the URL it prints below.")
+        creds = flow.run_local_server(port=0, prompt="consent",
+                                      open_browser=True,
+                                      authorization_prompt_message="[upload] Authorize here:\n  {url}")
+        print("[upload] ✅ Authorized.")
+        return creds
+    except Exception as e:  # noqa: BLE001
+        print(f"[upload] Auto browser flow unavailable ({e}); using copy-paste.")
 
-    Uses a localhost redirect (the modern, non-deprecated method). You approve
-    in your own browser; it redirects to a 'can't reach this page' localhost URL
-    whose address bar contains the code. Paste that whole URL (or just the code)
-    back here. run_console()/oob are gone, so we drive the flow manually.
-    """
+    # 2. Fallback: copy-paste localhost-redirect flow (headless / Codespace).
     import re
     from urllib.parse import urlparse, parse_qs
 

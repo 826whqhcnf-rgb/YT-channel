@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Download a gameplay background clip from YouTube into assets/gameplay/.
+Get a gameplay background clip into assets/gameplay/.
 
-  python get_gameplay.py "https://youtu.be/VIDEO_ID"
-  python get_gameplay.py "https://youtu.be/VIDEO_ID" --name subway1
+  python get_gameplay.py                       # auto: find a free clip on Archive.org
+  python get_gameplay.py --search "minecraft parkour"
+  python get_gameplay.py "https://youtu.be/VIDEO_ID"   # from YouTube (often IP-blocked on cloud)
+  python get_gameplay.py "https://.../clip.mp4"         # any direct .mp4 link
 
 The renderer then plays it (looped, cropped to 9:16) behind your stories.
 
-⚠️  Only download videos you are allowed to use ("no copyright" / "free to use"
-    / Creative Commons gameplay). Using copyrighted footage can get your videos
-    muted, demonetised, or removed.
+⚠️  Only use footage you are allowed to ("no copyright" / "free to use" / public
+    domain / Creative Commons). Archive.org's auto mode prefers such items, but
+    you are responsible for what you publish.
 """
 import argparse
 import os
@@ -21,12 +23,17 @@ DEST_DIR = os.path.join("assets", "gameplay")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Download a gameplay background clip")
-    p.add_argument("url", help="YouTube URL of a no-copyright gameplay video")
+    p = argparse.ArgumentParser(description="Get a gameplay background clip")
+    p.add_argument("url", nargs="?", help="YouTube or direct .mp4 URL (optional)")
+    p.add_argument("--search", help="Search Archive.org for this gameplay and download one")
     p.add_argument("--name", help="Filename (without extension) to save as")
     p.add_argument("--max-height", type=int, default=1920,
                    help="Cap resolution to keep the file small (default 1920)")
     args = p.parse_args()
+
+    # No URL given (or --search): auto-fetch a free clip from Archive.org.
+    if not args.url or args.search:
+        return _from_archive(args.search or "subway surfers gameplay")
 
     try:
         import yt_dlp  # noqa: F401
@@ -86,6 +93,100 @@ def main():
     print(f"\n✅ Done. Gameplay clips now in {DEST_DIR}/: {', '.join(clips)}")
     print("   Make a video:  python run.py")
     return 0
+
+
+def _from_archive(query: str) -> int:
+    """Search Archive.org for a gameplay video and download a clip from it.
+
+    Archive.org hosts lots of gameplay (Subway Surfers, Minecraft parkour, etc.)
+    and serves direct file downloads with NO bot check / IP lock — so this works
+    from a Codespace where YouTube does not.
+    """
+    import requests
+
+    UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"}
+    os.makedirs(DEST_DIR, exist_ok=True)
+    print(f"Searching Archive.org for: {query}")
+
+    # 1. Find candidate items (movies mediatype).
+    try:
+        r = requests.get(
+            "https://archive.org/advancedsearch.php",
+            params={"q": f'({query}) AND mediatype:(movies)',
+                    "fl[]": "identifier", "rows": "25", "output": "json"},
+            headers=UA, timeout=40,
+        )
+        r.raise_for_status()
+        ids = [d["identifier"] for d in r.json()["response"]["docs"]]
+    except Exception as e:  # noqa: BLE001
+        print(f"❌ Archive.org search failed ({e}).")
+        print("   Your network may be blocking it. Try the manual upload method")
+        print("   in assets/gameplay/README.md.")
+        return 1
+
+    if not ids:
+        print("No results. Try a different --search term (e.g. 'minecraft parkour').")
+        return 1
+
+    # 2. For each item, find a reasonably-sized .mp4 file and download it.
+    for ident in ids:
+        try:
+            meta = requests.get(f"https://archive.org/metadata/{ident}",
+                                headers=UA, timeout=40).json()
+        except Exception:
+            continue
+        files = meta.get("files", [])
+        mp4s = []
+        for f in files:
+            name = f.get("name", "")
+            if not name.lower().endswith(".mp4"):
+                continue
+            size = int(f.get("size", 0) or 0)
+            # 5 MB .. 600 MB: big enough to be real gameplay, small enough to fetch.
+            if 5_000_000 <= size <= 600_000_000:
+                mp4s.append((size, name))
+        if not mp4s:
+            continue
+        mp4s.sort()
+        _size, fname = mp4s[len(mp4s) // 2]  # middle = decent length, not huge
+        url = f"https://archive.org/download/{ident}/{requests.utils.quote(fname)}"
+        print(f"Found: {ident} → {fname} ({_size//1_000_000} MB)")
+        dest = os.path.join(DEST_DIR, "gameplay.mp4")
+        if _stream_to(url, dest, UA):
+            print(f"\n✅ Done. Saved {dest} ({os.path.getsize(dest)//1_000_000} MB).")
+            print(f"   Source: https://archive.org/details/{ident}")
+            print("   ⚠️  Check that item's license before publishing widely.")
+            print("   Make a video:  python run.py")
+            return 0
+        print("   (that file failed; trying another item...)")
+
+    print("❌ Could not download any clip. Try a different --search term, or the")
+    print("   manual upload method in assets/gameplay/README.md.")
+    return 1
+
+
+def _stream_to(url: str, dest: str, headers: dict) -> bool:
+    import requests
+    try:
+        with requests.get(url, headers=headers, stream=True, timeout=180,
+                          allow_redirects=True) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0))
+            done = 0
+            with open(dest, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    f.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        print(f"\r  {done*100//total:3d}%  ({done//1_000_000} MB)",
+                              end="", flush=True)
+        print()
+        return os.path.getsize(dest) > 100_000
+    except Exception as e:  # noqa: BLE001
+        print(f"\n  download error ({e})")
+        return False
 
 
 def _download_direct(url: str) -> int:

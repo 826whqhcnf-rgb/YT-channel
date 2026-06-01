@@ -133,13 +133,23 @@ def from_reddit(post: dict, words_per_item: int = 25) -> Script:
     title = post.get("title", "").strip()
     body = post.get("body", "").strip()
     sub = post.get("subreddit", "")
-    kws = reddit_mod.mood_keywords(sub)
+    moods = reddit_mod.mood_keywords(sub)
 
     # Split body into sentences, then group into ~words_per_item-word captions.
     sentences = re.split(r"(?<=[.!?])\s+", body)
     segments: list[Segment] = []
     cur: list[str] = []
     count = 0
+
+    def flush():
+        if not cur:
+            return
+        chunk = " ".join(cur)
+        # Content-accurate B-roll: pull a salient noun phrase from THIS chunk,
+        # falling back to the subreddit mood so footage matches what's said.
+        kw = _segment_keyword(chunk) or moods[len(segments) % len(moods)]
+        segments.append(Segment(text=chunk, keyword=kw))
+
     for s in sentences:
         s = s.strip()
         if not s:
@@ -147,10 +157,9 @@ def from_reddit(post: dict, words_per_item: int = 25) -> Script:
         cur.append(s)
         count += len(s.split())
         if count >= words_per_item:
-            segments.append(Segment(text=" ".join(cur), keyword=kws[len(segments) % len(kws)]))
+            flush()
             cur, count = [], 0
-    if cur:
-        segments.append(Segment(text=" ".join(cur), keyword=kws[len(segments) % len(kws)]))
+    flush()
 
     short_title = title if len(title) <= 70 else title[:67] + "..."
     tags = ["reddit", "story", "storytime", "redditstories", sub.lower(), "fyp", "viral"]
@@ -163,6 +172,27 @@ def from_reddit(post: dict, words_per_item: int = 25) -> Script:
         description=f"{title} #reddit #story #storytime #fyp",
         tags=tags,
     )
+
+
+# Concrete, filmable nouns we're happy to search stock footage for.
+_VISUAL_NOUNS = {
+    "wedding", "car", "house", "money", "phone", "dog", "cat", "school",
+    "office", "hospital", "police", "kitchen", "restaurant", "store", "road",
+    "rain", "storm", "city", "beach", "forest", "night", "party", "dinner",
+    "court", "letter", "computer", "baby", "ring", "door", "window", "train",
+    "airport", "hotel", "garden", "fire", "snow", "mountain", "river", "bar",
+    "gym", "park", "church", "graveyard", "mirror", "clock", "key", "gift",
+}
+
+
+def _segment_keyword(text: str) -> str | None:
+    """Find a concrete, filmable noun in the segment to drive B-roll search."""
+    words = re.findall(r"[a-zA-Z]+", text.lower())
+    for w in words:
+        base = w.rstrip("s") if w.endswith("s") and w[:-1] in _VISUAL_NOUNS else w
+        if base in _VISUAL_NOUNS:
+            return base
+    return None
 
 
 def generate(topic: str, cfg: dict) -> Script:

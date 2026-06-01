@@ -79,59 +79,63 @@ def _save_png(arr: np.ndarray, path: str) -> str:
     return path
 
 
-def _overlay_for_story(title: str, caption: str) -> np.ndarray:
-    """Story segment: persistent post title at top + big centred caption."""
-    img = Image.new("RGBA", SIZE, (0, 0, 0, 110))
+def _title_banner(title: str) -> np.ndarray:
+    """A persistent Reddit-style title banner near the top + a light scrim so
+    captions stay readable. Caption TEXT is NOT baked in here — it is burned as
+    word-synced subtitles in the final pass."""
+    img = Image.new("RGBA", SIZE, (0, 0, 0, 70))   # light scrim
     draw = ImageDraw.Draw(img)
 
-    # Small persistent title banner near the top
-    title_font = _font(max(40, W // 26))
-    ty = int(H * 0.09)
-    for line in textwrap.fill(title, 30).split("\n")[:2]:
-        draw.text((W//2, ty), line, font=title_font,
-                  fill=(255, 220, 0, 255), anchor="mm",
-                  stroke_width=3, stroke_fill=(0, 0, 0, 220))
-        ty += title_font.size + 6
-
-    # Big centred caption (the current line being narrated)
-    cap_font = _font(max(56, W // 17))
-    wrapped = textwrap.fill(caption, 22).split("\n")[:6]
-    block_h = len(wrapped) * (cap_font.size + 10)
-    cy = (H - block_h) // 2
-    for line in wrapped:
-        draw.text((W//2, cy), line, font=cap_font,
-                  fill=(255, 255, 255, 255), anchor="mm",
-                  stroke_width=4, stroke_fill=(0, 0, 0, 220))
-        cy += cap_font.size + 10
-
+    # Rounded "card" behind the title
+    title_font = _font(max(44, W // 24))
+    lines = textwrap.fill(title, 26).split("\n")[:3]
+    pad = 34
+    line_h = title_font.size + 12
+    box_h = len(lines) * line_h + pad
+    box_top = int(H * 0.05)
+    draw.rounded_rectangle(
+        [70, box_top, W - 70, box_top + box_h], radius=28, fill=(20, 20, 24, 210)
+    )
+    ty = box_top + pad // 2 + line_h // 2
+    for line in lines:
+        draw.text((W // 2, ty), line, font=title_font, anchor="mm",
+                  fill=(255, 255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0, 220))
+        ty += line_h
     return np.array(img)
 
 
-def _overlay_for_card(text: str) -> np.ndarray:
-    img = Image.new("RGBA", SIZE, (0, 0, 0, 60))
-    draw = ImageDraw.Draw(img)
-    font = _font(max(72, W // 11))
-    wrapped = textwrap.fill(text, 16)
-    cy = H // 2 - (wrapped.count("\n") + 1) * (font.size + 10) // 2
-    for line in wrapped.split("\n"):
-        draw.text((W//2, cy), line, font=font,
-                  fill=(255,255,255,255), anchor="mm",
-                  stroke_width=5, stroke_fill=(0,0,0,200))
-        cy += font.size + 10
-    return np.array(img)
+def _scrim(alpha: int = 80) -> np.ndarray:
+    return np.array(Image.new("RGBA", SIZE, (0, 0, 0, alpha)))
 
 
-def _render_seg(bg: str, bg_is_video: bool, overlay_png: str,
+def _render_seg(bg: str, mode: str, overlay_png: str,
                 audio: str, dur: float, out: str) -> None:
-    loop = ["-stream_loop", "-1"] if bg_is_video else ["-loop", "1"]
+    """mode: 'video' (loop+cover), 'photo' (Ken Burns zoom), 'gradient' (still)."""
+    if mode == "video":
+        loop = ["-stream_loop", "-1"]
+        bg_filter = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+                     f"crop={W}:{H},setsar=1,fps={FPS}[bg]")
+    elif mode == "photo":
+        loop = ["-loop", "1"]
+        frames = max(1, int(dur * FPS))
+        # Slow Ken Burns zoom-in for life/motion on a still image.
+        bg_filter = (
+            f"[0:v]scale={W*2}:{H*2}:force_original_aspect_ratio=increase,"
+            f"crop={W*2}:{H*2},"
+            f"zoompan=z='min(zoom+0.0006,1.18)':d={frames}:"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{H}:fps={FPS},"
+            f"setsar=1[bg]"
+        )
+    else:  # gradient / still color
+        loop = ["-loop", "1"]
+        bg_filter = f"[0:v]scale={W}:{H},setsar=1,fps={FPS}[bg]"
+
     ff.run([
         *loop, "-i", bg,
         "-loop", "1", "-i", overlay_png,
         "-i", audio,
         "-filter_complex",
-        f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-        f"crop={W}:{H},setsar=1,fps={FPS}[bg];"
-        f"[bg][1:v]overlay=0:0[v]",
+        f"{bg_filter};[bg][1:v]overlay=0:0[v]",
         "-map", "[v]", "-map", "2:a",
         "-t", f"{dur:.2f}", "-r", str(FPS),
         "-pix_fmt", "yuv420p",
@@ -142,95 +146,119 @@ def _render_seg(bg: str, bg_is_video: bool, overlay_png: str,
 
 
 def build(script, voice_clips, out_path: str, cfg: dict) -> str:
-    from . import footage
+    from . import footage, captions
 
     work = out_path + ".parts"
     os.makedirs(work, exist_ok=True)
     pexels_key = cfg.get("pexels_key", "")
     cache = os.path.join("assets", "cache")
     grad = gradient_png(os.path.join(work, "grad.png"))
+    banner = _save_png(_title_banner(script.title), os.path.join(work, "banner.png"))
+    scrim = _save_png(_scrim(80), os.path.join(work, "scrim.png"))
     parts = []
 
     total = len(script.segments) + 2
+    # Caption pieces: hook + each segment + outro, with absolute start offsets.
+    offsets: list[float] = []
+    clip_words: list[list] = []
+    running = 0.0
 
-    # --- Hook card (the scroll-stopping opening line) ---
+    def add_clip(vc, tail=0.3):
+        nonlocal running
+        offsets.append(running)
+        clip_words.append(vc.words)
+        running += vc.duration + tail
+
+    # --- Hook (different B-roll for the opening line) ---
     print(f"[render] [1/{total}] hook")
-    ov = _save_png(_overlay_for_card(script.hook), os.path.join(work, "hook_ov.png"))
-    hook_dur = voice_clips[0].duration + 0.3
-    _render_seg(grad, False, ov, voice_clips[0].path, hook_dur,
-                os.path.join(work, "seg_00.mp4"))
+    hook_kw = footage.clean_keyword(script.segments[0].keyword if script.segments else script.topic)
+    bg, mode = _bg_for(footage, hook_kw, cache, pexels_key, grad)
+    _render_seg(bg, mode, scrim, voice_clips[0].path,
+                voice_clips[0].duration + 0.3, os.path.join(work, "seg_00.mp4"))
     parts.append(os.path.join(work, "seg_00.mp4"))
+    add_clip(voice_clips[0])
 
-    # --- Story segments (voice_clips[1] .. voice_clips[N]) ---
+    # --- Story segments (fresh footage each one) ---
     for i, (seg_data, vc) in enumerate(zip(script.segments, voice_clips[1:])):
-        preview = seg_data.text[:40].replace("\n", " ")
-        print(f"[render] [{i+2}/{total}] {preview}...")
-        bg_path, bg_kind = footage.fetch(seg_data.keyword or script.topic, cache, pexels_key)
-        ov = _save_png(
-            _overlay_for_story(script.title, seg_data.text),
-            os.path.join(work, f"seg_{i:02d}_ov.png"),
-        )
+        print(f"[render] [{i+2}/{total}] {seg_data.text[:38].replace(chr(10),' ')}...")
+        bg, mode = _bg_for(footage, seg_data.keyword or script.topic, cache, pexels_key, grad)
         seg = os.path.join(work, f"seg_{i+1:02d}.mp4")
-        dur = vc.duration + 0.3
         try:
-            if bg_path:
-                _render_seg(bg_path, bg_kind == "video", ov, vc.path, dur, seg)
-            else:
-                _render_seg(grad, False, ov, vc.path, dur, seg)
+            _render_seg(bg, mode, banner, vc.path, vc.duration + 0.3, seg)
         except Exception as e:
             print(f"[render]   footage failed ({e}); using gradient.")
-            _render_seg(grad, False, ov, vc.path, dur, seg)
+            _render_seg(grad, "gradient", banner, vc.path, vc.duration + 0.3, seg)
         parts.append(seg)
+        add_clip(vc)
 
-    # --- Outro card ---
+    # --- Outro ---
     print(f"[render] [{total}/{total}] outro")
-    ov = _save_png(_overlay_for_card(script.outro), os.path.join(work, "outro_ov.png"))
     outro_vc = voice_clips[-1]
-    outro_dur = outro_vc.duration + 0.3
-    outro_seg = os.path.join(work, f"seg_{total:02d}.mp4")
-    _render_seg(grad, False, ov, outro_vc.path, outro_dur, outro_seg)
-    parts.append(outro_seg)
+    _render_seg(grad, "gradient", scrim, outro_vc.path,
+                outro_vc.duration + 0.3, os.path.join(work, f"seg_{total:02d}.mp4"))
+    parts.append(os.path.join(work, f"seg_{total:02d}.mp4"))
+    add_clip(outro_vc)
 
-    # --- Concatenate ---
+    # --- Concatenate segments ---
     print(f"[render] concatenating {len(parts)} segments...")
     lst = os.path.join(work, "list.txt")
     with open(lst, "w") as f:
         for p in parts:
             f.write(f"file '{os.path.abspath(p)}'\n")
-
-    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    music = resolve_music(cfg)
-    concat_target = os.path.join(work, "concat.mp4") if music else out_path
+    concat = os.path.join(work, "concat.mp4")
     try:
-        ff.run(["-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", concat_target])
+        ff.run(["-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", concat])
     except Exception as e:
         print(f"[render] stream-copy failed ({e}); re-encoding.")
-        ff.run([
-            "-f", "concat", "-safe", "0", "-i", lst,
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-threads", "2", "-c:a", "aac", "-ar", "44100", concat_target,
-        ])
+        ff.run(["-f", "concat", "-safe", "0", "-i", lst,
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-threads", "2", "-c:a", "aac", "-ar", "44100", concat])
 
-    # --- Optional background music (looped, ducked under the narration) ---
+    # --- Burn word-synced captions (the big quality win) ---
+    print("[render] burning word-synced captions...")
+    ass = captions.build_ass(clip_words, offsets, os.path.join(work, "subs.ass"))
+    captioned = os.path.join(work, "captioned.mp4")
+    ass_path = ass.replace("\\", "/").replace(":", r"\:")
+    try:
+        ff.run(["-i", concat, "-vf", f"subtitles='{ass_path}'",
+                "-c:v", "libx264", "-preset", "veryfast", "-threads", "2",
+                "-pix_fmt", "yuv420p", "-c:a", "copy", captioned])
+        stage = captioned
+    except Exception as e:
+        print(f"[render] caption burn failed ({e}); continuing without word-sync.")
+        stage = concat
+
+    # --- Optional background music (looped, ducked under narration) ---
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    music = resolve_music(cfg)
     if music:
         vol = cfg.get("music_volume", 0.12)
-        print(f"[render] mixing music: {os.path.basename(music)} (volume {vol})")
+        print(f"[render] mixing music: {os.path.basename(music)} (vol {vol})")
         try:
-            ff.run([
-                "-i", concat_target,
-                "-stream_loop", "-1", "-i", music,
-                "-filter_complex",
-                f"[1:a]volume={vol}[m];"
-                f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]",
-                "-map", "0:v", "-map", "[a]",
-                "-c:v", "copy", "-c:a", "aac", "-shortest", out_path,
-            ])
+            ff.run(["-i", stage, "-stream_loop", "-1", "-i", music,
+                    "-filter_complex",
+                    f"[1:a]volume={vol}[m];"
+                    f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]",
+                    "-map", "0:v", "-map", "[a]",
+                    "-c:v", "copy", "-c:a", "aac", "-shortest", out_path])
         except Exception as e:
-            print(f"[render] music mix failed ({e}); using narration only.")
-            shutil.move(concat_target, out_path)
+            print(f"[render] music mix failed ({e}); narration only.")
+            shutil.move(stage, out_path)
+    else:
+        shutil.move(stage, out_path)
 
     shutil.rmtree(work, ignore_errors=True)
     return out_path
+
+
+def _bg_for(footage, keyword, cache, pexels_key, grad):
+    """Return (bg_path, mode) for a segment, defaulting to the gradient."""
+    bg_path, kind = footage.fetch(keyword, cache, pexels_key)
+    if bg_path and kind == "video":
+        return bg_path, "video"
+    if bg_path and kind == "photo":
+        return bg_path, "photo"
+    return grad, "gradient"
 
 
 def resolve_music(cfg: dict) -> str | None:

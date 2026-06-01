@@ -50,9 +50,27 @@ def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool
     out_video = os.path.join(out_dir, f"{_slug(script.title)}.mp4")
     render.build(script, clips, out_video, cfg)
 
-    print(f"\n✅ Done!  →  {out_video}")
-    print(f"   Folder: {out_dir}")
-    return out_video
+    # 4. Copy into a single, easy-to-find downloads/ folder
+    final = _copy_to_downloads(out_video, script.title, ts)
+
+    print(f"\n✅ Done!  →  {final}")
+    print(f"   ⬇️  To save it: open the 'downloads' folder on the left,")
+    print(f"      right-click '{os.path.basename(final)}' → Download.")
+    return final
+
+
+def _copy_to_downloads(video_path: str, title: str, ts: str) -> str:
+    import shutil
+    dl_dir = "downloads"
+    os.makedirs(dl_dir, exist_ok=True)
+    name = f"{_slug(title)}-{ts}.mp4"
+    dest = os.path.join(dl_dir, name)
+    try:
+        shutil.copy2(video_path, dest)
+        return dest
+    except Exception as e:  # noqa: BLE001
+        print(f"[pipeline] could not copy to downloads/ ({e})")
+        return video_path
 
 
 def _make_script(topic, cfg, script_mod):

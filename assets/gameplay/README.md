@@ -8,6 +8,11 @@ word-synced captions on top — the classic Reddit-story look.
   random per video) and Pexels B-roll is skipped.
 - If it's empty, videos fall back to relevant stock B-roll / gradient.
 
+**Each video looks different:** the renderer starts the gameplay at a *random
+point* in the clip every time, so back-to-back videos don't show the same
+footage. Add several clips here for even more variety (a random one is chosen
+per video).
+
 ## How to add a clip (in your Codespace)
 
 **Easiest — download straight from YouTube:**

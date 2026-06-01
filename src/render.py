@@ -163,18 +163,25 @@ def build(script, voice_clips, out_path: str, cfg: dict) -> str:
 def _build_gameplay(script, voice_clips, out_path, cfg, work, banner, gameplay):
     """Continuous gameplay clip behind the full narration (Subway Surfers /
     Minecraft parkour style) with word-synced captions burned on top."""
+    import random
     from . import captions
 
     # 1. One narration track + caption offsets that match it exactly.
     narration = os.path.join(work, "narration.m4a")
     offsets, total = _concat_audio([vc.path for vc in voice_clips], narration, work)
     clip_words = [vc.words for vc in voice_clips]
-    print(f"[render] narration {total:.0f}s; compositing gameplay + banner...")
+
+    # Start at a RANDOM point in the gameplay so every video looks different.
+    # (It still loops via -stream_loop, so this works even for a short clip.)
+    clip_len = ff.duration(gameplay)
+    seek = round(random.uniform(0, max(clip_len - 1, 0)), 1) if clip_len > 2 else 0.0
+    print(f"[render] narration {total:.0f}s; gameplay from {seek:.0f}s "
+          f"(clip {clip_len:.0f}s); compositing...")
 
     # 2. Gameplay looped/cropped to fill 9:16, banner on top, narration as audio.
     base = os.path.join(work, "base.mp4")
     ff.run([
-        "-stream_loop", "-1", "-i", gameplay,
+        "-ss", f"{seek:.2f}", "-stream_loop", "-1", "-i", gameplay,
         "-loop", "1", "-i", banner,
         "-i", narration,
         "-filter_complex",

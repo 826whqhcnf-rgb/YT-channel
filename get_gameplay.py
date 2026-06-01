@@ -43,9 +43,15 @@ def main():
     # keep filenames filesystem-safe
     outtmpl = os.path.join(DEST_DIR, re.sub(r"[^\w%().\-]", "_", name) + ".%(ext)s")
 
-    fmt = f"bestvideo[height<={args.max_height}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     print("Downloading gameplay clip... (this can take a minute)")
     print("⚠️  Make sure this video is licensed for reuse (no-copyright / CC).")
+
+    # Direct stream URL (e.g. googlevideo.com/videoplayback...) bypasses YouTube's
+    # bot check entirely — just fetch the file straight with requests.
+    if "googlevideo.com/videoplayback" in url or "/videoplayback?" in url:
+        return _download_direct(url)
+
+    fmt = f"bestvideo[height<={args.max_height}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
     # YouTube blocks datacenter IPs (Codespaces) with "confirm you're not a bot".
     # Some client APIs slip past this, so try several before giving up. If the
@@ -78,6 +84,43 @@ def main():
 
     clips = [f for f in os.listdir(DEST_DIR) if f.lower().endswith(".mp4")]
     print(f"\n✅ Done. Gameplay clips now in {DEST_DIR}/: {', '.join(clips)}")
+    print("   Make a video:  python run.py")
+    return 0
+
+
+def _download_direct(url: str) -> int:
+    """Fetch a direct video stream URL (googlevideo videoplayback link)."""
+    import requests
+
+    os.makedirs(DEST_DIR, exist_ok=True)
+    dest = os.path.join(DEST_DIR, "gameplay.mp4")
+    print("Detected a direct stream URL — downloading the file directly.")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                             "AppleWebKit/537.36 (KHTML, like Gecko) "
+                             "Chrome/124.0.0.0 Safari/537.36"}
+    try:
+        with requests.get(url, headers=headers, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0))
+            done = 0
+            with open(dest, "wb") as f:
+                for chunk in r.iter_content(1 << 20):  # 1 MB
+                    f.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        pct = done * 100 // total
+                        print(f"\r  {pct:3d}%  ({done//1_000_000} MB)", end="", flush=True)
+        print()
+    except Exception as e:  # noqa: BLE001
+        print(f"\n❌ Direct download failed ({e}).")
+        return 1
+
+    size = os.path.getsize(dest)
+    if size < 100_000:
+        print(f"❌ Downloaded file is too small ({size} bytes) — the link may have "
+              "expired. Direct googlevideo links only last a few hours; grab a fresh one.")
+        return 1
+    print(f"\n✅ Done. Saved {dest} ({size//1_000_000} MB).")
     print("   Make a video:  python run.py")
     return 0
 

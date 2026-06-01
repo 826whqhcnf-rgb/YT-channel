@@ -47,6 +47,31 @@ key needed. It remembers which posts it used so a batch never repeats.
 
 ---
 
+## Long-form finance explainers (mode: finance)
+
+Make landscape 16:9 educational finance videos (plus an auto-cut vertical Short):
+```bash
+# AI drafts a script you can edit first (recommended for accuracy):
+python run.py --mode finance --topic "how compound interest works" --script-only
+#   ...open the printed script.json, fix/improve the text...
+python run.py --mode finance --script output/.../script.json
+
+# Or one shot, random finance topic:
+python run.py --mode finance --random
+```
+- Each section shows an on-screen heading + key bullet points over B-roll, with
+  word-synced captions in the lower third.
+- A vertical Short teaser is auto-cut from the first sections (turn off with
+  `"make_short": false` in config.json).
+- Length knobs in config.json: `sections`, `words_per_section`.
+- Needs your OpenRouter key (same one from setup). ⚠️ Always fact-check finance
+  scripts before posting — it's educational content, not advice.
+
+The Reddit story mode is unchanged — just leave off `--mode` (or use
+`--mode reddit`).
+
+---
+
 ## Background music (optional)
 
 Drop royalty-free `.mp3` tracks into the **`assets/music/`** folder. The

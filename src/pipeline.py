@@ -8,15 +8,16 @@ def _slug(text: str) -> str:
     return "-".join(keep.lower().split())[:40] or "video"
 
 
-def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool = False):
-    from . import script as script_mod, voice, render
+def run(topic: str, cfg: dict, script_path: str | None = None,
+        script_only: bool = False, mode: str = "reddit"):
+    from . import script as script_mod, voice, render, render_long
 
     # 1. Get the script: from a saved file, from Reddit, or AI-written.
     if script_path:
         print(f"[pipeline] Loading script from {script_path}")
         script = script_mod.Script.load(script_path)
     else:
-        script = _make_script(topic, cfg, script_mod)
+        script = _make_script(topic, cfg, script_mod, mode)
 
     if script is None:
         return None  # _make_script already explained why
@@ -29,26 +30,29 @@ def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool
     print(f"[pipeline] Script saved → {script_file}")
 
     if script_only:
-        print("\nOpen script.json to review/edit, then run:")
-        print(f"  python run.py --script {script_file}")
+        print("\n📝 Draft saved. Open this file and edit the text, then render it:")
+        print(f"     {script_file}")
+        print(f"  python run.py --script {script_file}" +
+              (" --mode finance" if mode == "finance" else ""))
         return
 
-    # 2. Voiceover — hook first, then each story segment, then outro
+    # 2. Voiceover — hook first, then each segment, then outro
     voice_cfg = cfg.get("voice", "en-US-AndrewNeural")
     texts = [script.hook] + [s.text for s in script.segments] + [script.outro]
     print(f"[pipeline] Synthesising {len(texts)} voice clips ({voice_cfg})...")
     clips = voice.synthesize(texts, os.path.join(out_dir, "audio"), voice_cfg)
 
     total_dur = sum(c.duration for c in clips)
-    print(f"[pipeline] Estimated length: ~{total_dur:.0f}s")
-    if total_dur < 60:
-        print("[pipeline] ⚠️  Under 1 min — raise num_items/words_per_item in config.json")
-    elif total_dur > 180:
-        print("[pipeline] ⚠️  Over 3 min (YouTube Shorts cap) — lower num_items/words_per_item")
+    mins = total_dur / 60
+    print(f"[pipeline] Estimated length: ~{total_dur:.0f}s (~{mins:.1f} min)")
 
-    # 3. Render
+    # 3. Render — long-form 16:9 for finance, vertical 9:16 for reddit stories.
     out_video = os.path.join(out_dir, f"{_slug(script.title)}.mp4")
-    render.build(script, clips, out_video, cfg)
+    if mode == "finance":
+        render_long.build(script, clips, out_video, cfg)
+        _maybe_make_short(script, clips, out_dir, ts, render, cfg)
+    else:
+        render.build(script, clips, out_video, cfg)
 
     # 4. Copy into a single, easy-to-find downloads/ folder
     final = _copy_to_downloads(out_video, script.title, ts)
@@ -80,9 +84,36 @@ def _copy_to_downloads(video_path: str, title: str, ts: str) -> str:
         return video_path
 
 
-def _make_script(topic, cfg, script_mod):
-    """Build a script. Reddit is the source; AI is only used if you explicitly
-    set source='ai' in config.json. Returns None on failure (no silent fallback)."""
+def _maybe_make_short(script, clips, out_dir, ts, render, cfg):
+    """For finance mode, also cut a vertical Short from the intro+first sections."""
+    if not cfg.get("make_short", True):
+        return
+    try:
+        from . import script as script_mod
+        # Use the hook + first 2-3 sections so the Short is a punchy teaser <60s.
+        short = script_mod.Script(
+            topic=script.topic, title=script.title, hook=script.hook,
+            segments=script.segments[:3],
+            outro="Full breakdown on the channel — follow for more.",
+            description=script.description, tags=script.tags + ["shorts"],
+        )
+        n = 1 + len(short.segments)  # hook + sections
+        short_clips = clips[:n] + [clips[-1]]
+        out = os.path.join(out_dir, f"{_slug(script.title)}-short.mp4")
+        print("[pipeline] Cutting a vertical Short teaser...")
+        render.build(short, short_clips, out, cfg)
+        _copy_to_downloads(out, script.title + " short", ts)
+    except Exception as e:  # noqa: BLE001
+        print(f"[pipeline] short cut skipped ({e}).")
+
+
+def _make_script(topic, cfg, script_mod, mode="reddit"):
+    """Build a script. Finance => AI explainer; otherwise Reddit (default).
+    Returns None on failure (no silent fallback)."""
+    if mode == "finance":
+        from . import finance
+        return finance.generate(topic, cfg)
+
     source = cfg.get("source", "reddit")
     if source == "ai":
         return script_mod.generate(topic, cfg)

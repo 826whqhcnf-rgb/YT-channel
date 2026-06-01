@@ -145,6 +145,10 @@ def main():
     cfg.setdefault("music", "assets/music")  # folder of music tracks (random pick)
     cfg.setdefault("music_volume", 0.12)     # quiet bed under the narration
     cfg.setdefault("gameplay", "assets/gameplay")  # gameplay clip behind video (if any)
+    # Finance / long-form explainer settings (used with --mode finance)
+    cfg.setdefault("sections", 7)             # number of explainer sections
+    cfg.setdefault("words_per_section", 90)   # ~spoken words per section
+    cfg.setdefault("make_short", True)        # also cut a vertical Short teaser
     cfg.setdefault("fps", 30)
     cfg.setdefault("upload", {})
     up = cfg["upload"]

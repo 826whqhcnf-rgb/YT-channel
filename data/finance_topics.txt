@@ -1,0 +1,27 @@
+# Finance explainer topics (one per line; # lines ignored).
+# Used with: python run.py --mode finance --random
+how compound interest actually works
+what is inflation and why it matters
+index funds explained for beginners
+how credit scores really work
+the difference between stocks and bonds
+how to build an emergency fund
+what is a recession and what causes one
+how mortgages and interest rates work
+the basics of how taxes work
+what is dollar cost averaging
+how the stock market actually works
+good debt vs bad debt explained
+what is compound growth and the rule of 72
+how ETFs work and why they're popular
+understanding assets vs liabilities
+how central banks control interest rates
+what is diversification and why it matters
+how to read a company balance sheet
+the power of starting to invest early
+what is a 401k and how does it work
+how bonds and yields actually work
+what causes the price of gold to move
+how insurance companies make money
+what is cash flow and why it's king
+understanding risk vs reward in investing

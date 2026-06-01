@@ -5,7 +5,6 @@ phrases that stay readable on a phone screen.
 """
 from __future__ import annotations
 
-W, H = 1080, 1920
 WORDS_PER_PHRASE = 3   # how many words visible on screen at once (kept short to fit)
 
 
@@ -22,8 +21,13 @@ def _esc(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def _header() -> str:
-    # Big bold centred captions with a thick outline — readable over any footage.
+def _header(W: int, H: int) -> str:
+    # Big bold captions with a thick outline. Vertical => centred; landscape =>
+    # lower-third (alignment 2, larger bottom margin) so it doesn't cover slides.
+    if W >= H:  # landscape
+        fs, align, ml, mv = 64, 2, 220, 90
+    else:       # vertical
+        fs, align, ml, mv = 82, 5, 140, 0
     return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -33,7 +37,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Base,DejaVu Sans,82,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,6,3,5,140,140,0,1
+Style: Base,DejaVu Sans,{fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,6,3,{align},{ml},{ml},{mv},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -44,13 +48,14 @@ def _dialogue(start: float, end: float, text: str, style: str = "Base") -> str:
     return f"Dialogue: 0,{_ts(start)},{_ts(end)},{style},,0,0,0,,{text}\n"
 
 
-def build_ass(clip_words, segment_offsets: list[float], path: str) -> str:
+def build_ass(clip_words, segment_offsets: list[float], path: str,
+              size: tuple[int, int] = (1080, 1920)) -> str:
     """
     clip_words: list (per audio clip) of Word(text,start,end) lists.
     segment_offsets: absolute start time (s) of each clip in the final video.
     Writes word-synced phrases; the currently-spoken word is highlighted.
     """
-    lines = [_header()]
+    lines = [_header(size[0], size[1])]
 
     for words, base in zip(clip_words, segment_offsets):
         if not words:

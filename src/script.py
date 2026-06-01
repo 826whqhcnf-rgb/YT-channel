@@ -53,6 +53,8 @@ def choose_models(key: str | None = None) -> list[str]:
 class Segment:
     text: str
     keyword: str = ""
+    heading: str = ""          # on-screen section heading (finance/explainer slides)
+    points: list = field(default_factory=list)  # bullet key-points for the slide
 
 
 @dataclass

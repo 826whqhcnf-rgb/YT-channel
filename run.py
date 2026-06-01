@@ -21,8 +21,7 @@ def load_config():
         return json.load(f)
 
 
-def all_topics():
-    path = "data/topics.txt"
+def all_topics(path="data/topics.txt"):
     if os.path.exists(path):
         lines = [l.strip() for l in open(path) if l.strip() and not l.startswith("#")]
         if lines:
@@ -30,13 +29,13 @@ def all_topics():
     return ["strangest deep sea creatures"]
 
 
-def random_topic():
-    return random.choice(all_topics())
+def random_topic(path="data/topics.txt"):
+    return random.choice(all_topics(path))
 
 
-def pick_topics(count):
+def pick_topics(count, path="data/topics.txt"):
     """Return `count` distinct random topics (repeats only if not enough)."""
-    pool = all_topics()
+    pool = all_topics(path)
     random.shuffle(pool)
     if count <= len(pool):
         return pool[:count]
@@ -52,6 +51,8 @@ def main():
     p.add_argument("--script-only", action="store_true", help="Only write the script, no video")
     p.add_argument("--script", help="Path to existing script.json to use instead of generating")
     p.add_argument("--upload", help="youtube, tiktok, or youtube,tiktok")
+    p.add_argument("--mode", choices=["reddit", "finance"], default="reddit",
+                   help="reddit = vertical story (default); finance = long-form explainer")
     p.add_argument("--reset-stories", action="store_true",
                    help="Clear the list of already-used Reddit posts")
     args = p.parse_args()
@@ -74,15 +75,17 @@ def main():
 
     from src.pipeline import run
 
+    topics_file = "data/finance_topics.txt" if args.mode == "finance" else "data/topics.txt"
+
     # --- Batch mode ---
     if args.batch > 1:
-        topics = pick_topics(args.batch)
-        print(f"=== Batch: making {len(topics)} videos ===")
+        topics = pick_topics(args.batch, topics_file)
+        print(f"=== Batch: making {len(topics)} {args.mode} videos ===")
         results = []
         for i, topic in enumerate(topics, 1):
             print(f"\n----- [{i}/{len(topics)}] {topic} -----")
             try:
-                out = run(topic, cfg, script_only=args.script_only)
+                out = run(topic, cfg, script_only=args.script_only, mode=args.mode)
                 results.append((topic, out if out else "script written"))
             except Exception as e:
                 print(f"[batch] '{topic}' failed: {e}")
@@ -95,9 +98,9 @@ def main():
     # --- Single video ---
     topic = args.topic
     if not topic or args.random:
-        topic = random_topic()
+        topic = random_topic(topics_file)
         print(f"Topic: {topic}")
-    run(topic, cfg, script_path=args.script, script_only=args.script_only)
+    run(topic, cfg, script_path=args.script, script_only=args.script_only, mode=args.mode)
 
 
 if __name__ == "__main__":

@@ -160,6 +160,14 @@ def main():
     up.setdefault("tiktok_token", "")             # paste your TikTok access token
     up.setdefault("tiktok_privacy", "SELF_ONLY")  # SELF_ONLY until app approved
 
+    cfg.setdefault("autopilot", {
+        "count": 3,              # videos per run
+        "mode": "reddit",        # reddit | finance
+        "upload": [],            # e.g. ["youtube"] or ["youtube","tiktok"]; [] = save only
+        "every_hours": 24,       # with --loop, hours between runs
+        "stop_after_runs": 0,    # 0 = unlimited
+    })
+
     with open(CONFIG, "w") as f:
         json.dump(cfg, f, indent=2)
 

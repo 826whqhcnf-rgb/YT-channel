@@ -72,6 +72,26 @@ The Reddit story mode is unchanged — just leave off `--mode` (or use
 
 ---
 
+## Autopilot (hands-off) 🤖
+
+Make (and optionally post) a batch of videos with one command:
+```bash
+python autopilot.py                  # uses the "autopilot" block in config.json
+python autopilot.py --count 3        # make 3 now
+python autopilot.py --upload youtube # make + auto-post to YouTube
+python autopilot.py --loop           # keep going on a schedule (every_hours)
+python autopilot.py --mode finance   # long-form finance instead of stories
+```
+Configure defaults in `config.json` → `autopilot`:
+`count` (videos per run), `mode` (reddit/finance), `upload` (["youtube"] etc. or
+[] to just save), `every_hours` (loop interval), `stop_after_runs` (0 = forever).
+
+The first YouTube post pauses once for the browser authorization; after that
+it's fully unattended. Leave `python autopilot.py --loop` running and it keeps
+your channel fed.
+
+---
+
 ## Background music (optional)
 
 Drop royalty-free `.mp3` tracks into the **`assets/music/`** folder. The

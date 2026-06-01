@@ -165,13 +165,19 @@ def from_reddit(post: dict, words_per_item: int = 25) -> Script:
 
     short_title = title if len(title) <= 70 else title[:67] + "..."
     tags = ["reddit", "story", "storytime", "redditstories", sub.lower(), "fyp", "viral"]
+    description = (
+        f"{title}\n\n"
+        "😱 Reddit's wildest stories, read out loud. Would YOU have done the same?\n"
+        "👇 Drop your verdict in the comments — and FOLLOW for a new story every day!\n\n"
+        "#reddit #redditstories #storytime #aita #tifu #fyp #shorts #drama #storytelling"
+    )
     return Script(
         topic=title,
         title=short_title,
         hook=title,
         segments=segments,
         outro="Was the OP wrong? Comment below — and follow for more stories.",
-        description=f"{title} #reddit #story #storytime #fyp",
+        description=description,
         tags=tags,
     )
 

@@ -150,15 +150,59 @@ def build(script, voice_clips, out_path: str, cfg: dict) -> str:
 
     work = out_path + ".parts"
     os.makedirs(work, exist_ok=True)
+    banner = _save_png(_title_banner(script.title), os.path.join(work, "banner.png"))
+
+    gameplay = resolve_gameplay(cfg)
+    if gameplay:
+        print(f"[render] gameplay background: {os.path.basename(gameplay)}")
+        return _build_gameplay(script, voice_clips, out_path, cfg, work, banner, gameplay)
+
+    return _build_broll(script, voice_clips, out_path, cfg, work, banner)
+
+
+def _build_gameplay(script, voice_clips, out_path, cfg, work, banner, gameplay):
+    """Continuous gameplay clip behind the full narration (Subway Surfers /
+    Minecraft parkour style) with word-synced captions burned on top."""
+    from . import captions
+
+    # 1. One narration track + caption offsets that match it exactly.
+    narration = os.path.join(work, "narration.m4a")
+    offsets, total = _concat_audio([vc.path for vc in voice_clips], narration, work)
+    clip_words = [vc.words for vc in voice_clips]
+    print(f"[render] narration {total:.0f}s; compositing gameplay + banner...")
+
+    # 2. Gameplay looped/cropped to fill 9:16, banner on top, narration as audio.
+    base = os.path.join(work, "base.mp4")
+    ff.run([
+        "-stream_loop", "-1", "-i", gameplay,
+        "-loop", "1", "-i", banner,
+        "-i", narration,
+        "-filter_complex",
+        f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+        f"crop={W}:{H},setsar=1,fps={FPS}[bg];"
+        f"[bg][1:v]overlay=0:0[v]",
+        "-map", "[v]", "-map", "2:a",
+        "-t", f"{total:.2f}", "-r", str(FPS),
+        "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "veryfast", "-threads", "2",
+        "-c:a", "aac", "-ar", "44100", "-b:a", "128k",
+        base,
+    ])
+
+    return _finish(base, clip_words, offsets, out_path, cfg, work)
+
+
+def _build_broll(script, voice_clips, out_path, cfg, work, banner):
+    """Original path: fresh Pexels B-roll (or gradient) per segment."""
+    from . import footage, captions
+
     pexels_key = cfg.get("pexels_key", "")
     cache = os.path.join("assets", "cache")
     grad = gradient_png(os.path.join(work, "grad.png"))
-    banner = _save_png(_title_banner(script.title), os.path.join(work, "banner.png"))
     scrim = _save_png(_scrim(80), os.path.join(work, "scrim.png"))
     parts = []
 
     total = len(script.segments) + 2
-    # Caption pieces: hook + each segment + outro, with absolute start offsets.
     offsets: list[float] = []
     clip_words: list[list] = []
     running = 0.0
@@ -214,21 +258,42 @@ def build(script, voice_clips, out_path: str, cfg: dict) -> str:
                 "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
                 "-threads", "2", "-c:a", "aac", "-ar", "44100", concat])
 
-    # --- Burn word-synced captions (the big quality win) ---
+    return _finish(concat, clip_words, offsets, out_path, cfg, work)
+
+
+def _concat_audio(paths, out_audio, work):
+    """Concatenate narration clips into one track. Returns (offsets, total)."""
+    offsets, running = [], 0.0
+    for p in paths:
+        offsets.append(running)
+        running += ff.duration(p) + 0.3
+    lst = os.path.join(work, "audio_list.txt")
+    with open(lst, "w") as f:
+        for p in paths:
+            f.write(f"file '{os.path.abspath(p)}'\n")
+    # Re-encode to a uniform AAC track so concat is reliable across MP3s.
+    ff.run(["-f", "concat", "-safe", "0", "-i", lst,
+            "-af", "apad=pad_dur=0.3", "-c:a", "aac", "-ar", "44100", out_audio])
+    return offsets, ff.duration(out_audio)
+
+
+def _finish(base_video, clip_words, offsets, out_path, cfg, work):
+    """Shared tail: burn word-synced captions, mix optional music, save."""
+    from . import captions
+
     print("[render] burning word-synced captions...")
     ass = captions.build_ass(clip_words, offsets, os.path.join(work, "subs.ass"))
     captioned = os.path.join(work, "captioned.mp4")
     ass_path = ass.replace("\\", "/").replace(":", r"\:")
     try:
-        ff.run(["-i", concat, "-vf", f"subtitles='{ass_path}'",
+        ff.run(["-i", base_video, "-vf", f"subtitles='{ass_path}'",
                 "-c:v", "libx264", "-preset", "veryfast", "-threads", "2",
                 "-pix_fmt", "yuv420p", "-c:a", "copy", captioned])
         stage = captioned
     except Exception as e:
         print(f"[render] caption burn failed ({e}); continuing without word-sync.")
-        stage = concat
+        stage = base_video
 
-    # --- Optional background music (looped, ducked under narration) ---
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     music = resolve_music(cfg)
     if music:
@@ -249,6 +314,23 @@ def build(script, voice_clips, out_path: str, cfg: dict) -> str:
 
     shutil.rmtree(work, ignore_errors=True)
     return out_path
+
+
+def resolve_gameplay(cfg: dict) -> str | None:
+    """Find a gameplay background clip. cfg['gameplay'] may be a file or a
+    folder (a random clip is chosen). Returns None if none available."""
+    import random
+    g = cfg.get("gameplay", "assets/gameplay")
+    if not g:
+        return None
+    if os.path.isfile(g):
+        return g
+    if os.path.isdir(g):
+        clips = [os.path.join(g, f) for f in os.listdir(g)
+                 if f.lower().endswith((".mp4", ".mov", ".mkv", ".webm"))]
+        if clips:
+            return random.choice(clips)
+    return None
 
 
 def _bg_for(footage, keyword, cache, pexels_key, grad):

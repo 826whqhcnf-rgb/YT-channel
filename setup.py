@@ -144,6 +144,7 @@ def main():
     cfg.setdefault("max_words", 320)       # longer stories are truncated to this
     cfg.setdefault("music", "assets/music")  # folder of music tracks (random pick)
     cfg.setdefault("music_volume", 0.12)     # quiet bed under the narration
+    cfg.setdefault("gameplay", "assets/gameplay")  # gameplay clip behind video (if any)
     cfg.setdefault("fps", 30)
     cfg.setdefault("upload", {"youtube": False, "tiktok": False})
 

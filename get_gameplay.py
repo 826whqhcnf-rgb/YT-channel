@@ -44,18 +44,36 @@ def main():
     outtmpl = os.path.join(DEST_DIR, re.sub(r"[^\w%().\-]", "_", name) + ".%(ext)s")
 
     fmt = f"bestvideo[height<={args.max_height}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-    cmd = [
-        sys.executable, "-m", "yt_dlp",
-        "-f", fmt,
-        "--merge-output-format", "mp4",
-        "-o", outtmpl,
-        url,
-    ]
     print("Downloading gameplay clip... (this can take a minute)")
     print("⚠️  Make sure this video is licensed for reuse (no-copyright / CC).")
-    rc = subprocess.run(cmd).returncode
+
+    # YouTube blocks datacenter IPs (Codespaces) with "confirm you're not a bot".
+    # Some client APIs slip past this, so try several before giving up. If the
+    # user exported cookies to cookies.txt, use them (most reliable).
+    clients = ["tv", "ios", "web_safari", "android", "mweb"]
+    base = [sys.executable, "-m", "yt_dlp", "-f", fmt,
+            "--merge-output-format", "mp4", "-o", outtmpl]
+    if os.path.exists("cookies.txt"):
+        base += ["--cookies", "cookies.txt"]
+        print("Using cookies.txt for authentication.")
+
+    rc = 1
+    for client in clients:
+        print(f"\n→ Trying YouTube client: {client}")
+        rc = subprocess.run(
+            base + ["--extractor-args", f"youtube:player_client={client}", url]
+        ).returncode
+        if rc == 0:
+            break
+
     if rc != 0:
-        print("\nDownload failed. Check the URL, or try a different clip.")
+        print("\n❌ Download failed — YouTube is blocking this datacenter IP.")
+        print("   Fixes, easiest first:")
+        print("   1. Try a different no-copyright gameplay video (some work, some don't).")
+        print("   2. Download the clip on your OWN computer, then drag-and-drop the")
+        print("      .mp4 into the assets/gameplay folder on the left.")
+        print("   3. Export YouTube cookies to a file named cookies.txt in this")
+        print("      folder (see yt-dlp wiki) and run this command again.")
         return rc
 
     clips = [f for f in os.listdir(DEST_DIR) if f.lower().endswith(".mp4")]

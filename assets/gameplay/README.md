@@ -20,10 +20,16 @@ free-to-use** gameplay video (check the video's description). Example:
 python get_gameplay.py "https://youtu.be/zZ7AimPACzc"
 ```
 
-**Or manually:**
-1. Download a long, **no-copyright / royalty-free** gameplay video.
+**Or manually (most reliable):**
+1. Download a long, **no-copyright / royalty-free** gameplay video on your OWN
+   computer (any YouTube downloader / browser extension you're allowed to use).
 2. **Drag-and-drop the file into this `assets/gameplay` folder** in the
    Codespace file explorer on the left.
+
+> ⚠️ Note: YouTube often blocks downloads from cloud servers (Codespaces) with
+> a "confirm you're not a bot" error. `get_gameplay.py` automatically tries
+> several YouTube clients to get around it, but it doesn't always work. If it
+> keeps failing, use the manual drag-and-drop method above — it always works.
 
 A single 5-10 minute clip is plenty; the renderer loops it if a video is longer
 than the clip, and starts wherever it needs to.

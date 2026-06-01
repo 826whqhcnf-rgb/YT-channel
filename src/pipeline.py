@@ -56,6 +56,13 @@ def run(topic: str, cfg: dict, script_path: str | None = None, script_only: bool
     print(f"\n✅ Done!  →  {final}")
     print(f"   ⬇️  To save it: open the 'downloads' folder on the left,")
     print(f"      right-click '{os.path.basename(final)}' → Download.")
+
+    # 5. Optional auto-post to YouTube / TikTok
+    up = cfg.get("upload", {})
+    if up.get("youtube") or up.get("tiktok"):
+        from . import upload as upload_mod
+        upload_mod.publish(final, script, cfg)
+
     return final
 
 

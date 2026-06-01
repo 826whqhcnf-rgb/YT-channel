@@ -9,3 +9,4 @@ __pycache__/
 *.mp3
 *.wav
 *.mp4
+youtube_token.json

@@ -146,7 +146,15 @@ def main():
     cfg.setdefault("music_volume", 0.12)     # quiet bed under the narration
     cfg.setdefault("gameplay", "assets/gameplay")  # gameplay clip behind video (if any)
     cfg.setdefault("fps", 30)
-    cfg.setdefault("upload", {"youtube": False, "tiktok": False})
+    cfg.setdefault("upload", {})
+    up = cfg["upload"]
+    up.setdefault("youtube", False)               # auto-post to YouTube Shorts
+    up.setdefault("tiktok", False)                # auto-post to TikTok
+    up.setdefault("youtube_client_secret", "client_secret.json")
+    up.setdefault("youtube_privacy", "public")    # public | unlisted | private
+    up.setdefault("youtube_category", "24")       # 24 = Entertainment
+    up.setdefault("tiktok_token", "")             # paste your TikTok access token
+    up.setdefault("tiktok_privacy", "SELF_ONLY")  # SELF_ONLY until app approved
 
     with open(CONFIG, "w") as f:
         json.dump(cfg, f, indent=2)

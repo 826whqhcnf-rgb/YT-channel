@@ -56,6 +56,18 @@ TikTok-safe music sources. Adjust loudness with `"music_volume"` in `config.json
 
 ---
 
+## Auto-posting (optional)
+
+Post finished videos straight to YouTube Shorts / TikTok with your own account:
+```bash
+python run.py --upload youtube,tiktok
+python run.py --batch 5 --upload youtube   # post a whole backlog
+```
+One-time credential setup (your keys stay on your machine) is in
+**`UPLOAD_SETUP.md`**.
+
+---
+
 ## Post the video
 
 **TikTok:** Open TikTok app → + → Upload → pick the .mp4

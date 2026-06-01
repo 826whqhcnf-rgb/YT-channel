@@ -57,9 +57,13 @@ def run(topic: str, cfg: dict, script_path: str | None = None,
     # 4. Copy into a single, easy-to-find downloads/ folder
     final = _copy_to_downloads(out_video, script.title, ts)
 
+    # 4b. Write a ready-to-paste caption (title + description) next to the video
+    _write_caption(final, script)
+
     print(f"\n✅ Done!  →  {final}")
     print(f"   ⬇️  To save it: open the 'downloads' folder on the left,")
     print(f"      right-click '{os.path.basename(final)}' → Download.")
+    print(f"   📋 Title + description to paste: {os.path.splitext(final)[0]}.txt")
 
     # 5. Optional auto-post to YouTube / TikTok
     up = cfg.get("upload", {})
@@ -68,6 +72,29 @@ def run(topic: str, cfg: dict, script_path: str | None = None,
         upload_mod.publish(final, script, cfg)
 
     return final
+
+
+def _write_caption(video_path: str, script) -> str:
+    """Write a .txt next to the video with the title + description to copy-paste
+    when posting by hand. Makes manual posting almost as fast as auto."""
+    txt = os.path.splitext(video_path)[0] + ".txt"
+    title = getattr(script, "title", "Story")
+    desc = getattr(script, "description", "")
+    tags = " ".join("#" + t for t in getattr(script, "tags", [])[:12])
+    body = (
+        "===== TITLE (paste as the video title) =====\n"
+        f"{title}\n\n"
+        "===== DESCRIPTION / CAPTION (paste in the description box) =====\n"
+        f"{desc}\n\n"
+        "===== HASHTAGS =====\n"
+        f"{tags}\n"
+    )
+    try:
+        with open(txt, "w", encoding="utf-8") as f:
+            f.write(body)
+    except Exception as e:  # noqa: BLE001
+        print(f"[pipeline] could not write caption ({e})")
+    return txt
 
 
 def _copy_to_downloads(video_path: str, title: str, ts: str) -> str:
